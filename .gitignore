@@ -1,0 +1,29 @@
+# Local config & media (never commit)
+config.json
+wallpapers/
+
+# Android / Gradle
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+.DS_Store
+
+# Per-device script state
+scripts/.state/
+
+# Local working notes
+.superpowers/
+
+# Public setup scripts
+scripts/platform-tools/
+wallpapers/originals/
+
+# Release artifacts (scripts/tools/release.sh)
+dist/

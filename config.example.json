@@ -1,0 +1,14 @@
+{
+  "ha": { "url": "http://homeassistant.local:8123", "token": "PASTE_LONG_LIVED_TOKEN", "weatherEntity": "weather.forecast_home" },
+  "wallpaper": { "order": "shuffle" },
+  "wifi": { "ssid": "", "password": "", "security": "WPA" },
+  "tv": {
+    "entity": "media_player.living_room_tv",
+    "inputs": [ { "name": "Streamer", "source": "HDMI 1" }, { "name": "Game Console", "source": "HDMI 2" } ],
+    "thisDevice": "HDMI 1"
+  },
+  "lofi": { "spotifyEntity": "media_player.spotify", "source": "Living Room TV", "playlist": "spotify:playlist:YOUR_PLAYLIST_ID", "volume": 0.15 },
+  "spotify": { "clientId": "", "refreshToken": "" },
+  "hub": { "peopleNames": {}, "carColors": { "my_car": "gray" }, "lowTirePsi": 38, "excludedAreas": [], "hiddenPeople": [], "sceneOrder": [] },
+  "alerts": { "text": {} }
+}

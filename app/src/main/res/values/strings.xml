@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">NemuiTV</string>
+    <string name="takeover_label">NemuiTV Home button</string>
+    <string name="takeover_description">Makes the remote\'s Home button open NemuiTV (hold Home for the Control Center over any app). It only watches the Home key and when Google\'s home screen appears.</string>
+</resources>

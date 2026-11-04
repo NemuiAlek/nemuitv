@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.NemuiTV" parent="android:Theme.DeviceDefault.NoActionBar">
+        <!-- No window background: the wallpaper covers the screen, and painting black under it every frame costs
+             a full extra fill on the TV's GPU (measured with HWUI overdraw on the Streamer). -->
+        <item name="android:windowBackground">@null</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>
