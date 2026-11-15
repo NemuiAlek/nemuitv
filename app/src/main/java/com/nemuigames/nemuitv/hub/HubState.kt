@@ -54,6 +54,8 @@ data class HubUi(
 const val CONFIRM_WINDOW_MS = 3_000L
 const val LOCK_CONFIRM_MS = 20_000L
 const val MESSAGE_MS = 4_000L
+/** How much longer than a command's confirm window its HA reply may take. */
+const val REPLY_GRACE_MS = 5_000L
 const val OFFLINE_MESSAGE = "Home Assistant offline"
 
 /** The model's ids the hub needs live state for (no cameras). */
@@ -299,9 +301,18 @@ class HubState(
             if (c in commands) finish(c, "Couldn't $failVerb $failName")
         }
         checkCommands() // ids already in the expected state are confirmed right away
+        // A car command can outlast HA's reply: HA answers only after Tesla has woken the car (up to ~30 s), so a
+        // timeout there isn't a failure yet; the state event or the window timer decides.
+        val waitOutTimeout = windowMs > CONFIRM_WINDOW_MS
         scope.launch {
-            val r = port.callServiceForResult(domain, service, data, target)
-            if (c !in commands) return@launch
+            val r = port.callServiceForResult(domain, service, data, target, timeoutMs = windowMs + REPLY_GRACE_MS)
+            if (c !in commands) {
+                // Already confirmed or timed out: an error still gets its handler (a late no-key reply still blocks
+                // the car), but nothing else changes.
+                if (r is HaResult.Error) onError(r.error)
+                return@launch
+            }
+            if (r is HaResult.Timeout && waitOutTimeout) return@launch
             if (r is HaResult.Ok) {
                 // Scripts give no reliable state change: HA's success reply is their confirmation.
                 if (confirmOnResult) finish(c, null)

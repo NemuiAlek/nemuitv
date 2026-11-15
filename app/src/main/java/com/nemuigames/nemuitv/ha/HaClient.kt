@@ -167,12 +167,14 @@ class HaClient(
         }.toString())
     }
 
-    override suspend fun callServiceForResult(domain: String, service: String, data: JsonObject, target: JsonObject?): HaResult =
+    override suspend fun callServiceForResult(
+        domain: String, service: String, data: JsonObject, target: JsonObject?, timeoutMs: Long,
+    ): HaResult =
         request("call_service", buildJsonObject {
             put("domain", domain); put("service", service)
             put("service_data", data as JsonElement)
             if (target != null) put("target", target as JsonElement)
-        })
+        }, timeoutMs)
 
     private fun frame(id: Int, type: String, payload: JsonObject) = buildJsonObject {
         payload.forEach { (k, v) -> put(k, v) }

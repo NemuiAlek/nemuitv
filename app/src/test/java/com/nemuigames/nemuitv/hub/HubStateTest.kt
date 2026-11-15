@@ -47,6 +47,10 @@ class FakePort : HaPort {
     val subPayloads = mutableListOf<JsonObject>()
     val calls = mutableListOf<Call>()
     var callResult: HaResult = HaResult.Ok(null)
+    /** How long (virtual time) each call waits before answering [callResult], like HA waiting on a sleeping car. */
+    var callDelayMs = 0L
+    /** The request timeout each call was given. */
+    val callTimeouts = mutableListOf<Long>()
     /** When set, every registry request waits for it (to see whether the requests overlap). */
     var requestGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
     /** When true the registries also hold two scripts labeled for the hub plus a guest-mode flag. */
@@ -110,8 +114,12 @@ class FakePort : HaPort {
         return FakeSub().also { subs += it }
     }
 
-    override suspend fun callServiceForResult(domain: String, service: String, data: JsonObject, target: JsonObject?): HaResult {
+    override suspend fun callServiceForResult(
+        domain: String, service: String, data: JsonObject, target: JsonObject?, timeoutMs: Long,
+    ): HaResult {
         calls += Call(domain, service, data, target)
+        callTimeouts += timeoutMs
+        if (callDelayMs > 0) kotlinx.coroutines.delay(callDelayMs)
         return callResult
     }
 
@@ -270,6 +278,19 @@ class HubStateTest {
         hub.toggle("light.floor_2")
         runCurrent()
         assertFalse(hub.tile("light.floor_2").pending)
+        assertEquals("Couldn't reach Floor 2", hub.ui.value.message)
+    }
+
+    @Test fun `toggle light timeoutResult stillFinishesRightAway`() = runTest {
+        val hub = opened()
+        port.callDelayMs = 1_000
+        port.callResult = HaResult.Timeout
+        hub.toggle("light.floor_2")
+        runCurrent()
+        assertEquals(listOf(CONFIRM_WINDOW_MS + REPLY_GRACE_MS), port.callTimeouts)
+        assertTrue(hub.tile("light.floor_2").pending)
+        advanceTimeBy(1_001); runCurrent()
+        assertFalse(hub.tile("light.floor_2").pending) // before the 3 s window: a non-car timeout ends it
         assertEquals("Couldn't reach Floor 2", hub.ui.value.message)
     }
 
@@ -604,6 +625,52 @@ class HubStateTest {
         assertFalse("climate.my_car_climate" in hub.ui.value.pending)
         assertEquals("Couldn't reach My Car's climate", hub.ui.value.message)
         assertTrue(hub.ui.value.blockedCars.isEmpty())
+    }
+
+    @Test fun `carClimate noKeyReplyAfter20s stillBlocks noCouldntReach`() = runTest {
+        val hub = openedWithCars()
+        port.callDelayMs = 20_000 // asleep car: Tesla tries to wake it before refusing the unpaired key
+        port.callResult = HaResult.Error(com.nemuigames.nemuitv.ha.HaError("home_assistant_error", NO_KEY))
+        hub.toggleCarClimate("my_car")
+        runCurrent()
+        assertEquals(listOf(CAR_CONFIRM_MS + REPLY_GRACE_MS), port.callTimeouts)
+        advanceTimeBy(19_999); runCurrent()
+        assertTrue("climate.my_car_climate" in hub.ui.value.pending)
+        assertNull(hub.ui.value.message)
+        advanceTimeBy(2); runCurrent()
+        assertEquals(setOf("my_car"), hub.ui.value.blockedCars)
+        assertEquals(noKeyMessage("My Car"), hub.ui.value.message)
+        assertTrue(hub.ui.value.pending.isEmpty())
+        advanceTimeBy(CAR_CONFIRM_MS); runCurrent() // the window's end must not add "Couldn't reach"
+        assertFalse(hub.ui.value.message?.startsWith("Couldn't") == true)
+    }
+
+    @Test fun `carClimate timeoutAt10s staysPending stateAt25sConfirms`() = runTest {
+        val hub = openedWithCars()
+        port.callDelayMs = 10_000
+        port.callResult = HaResult.Timeout
+        hub.toggleCarClimate("my_car")
+        runCurrent()
+        advanceTimeBy(10_001); runCurrent()
+        assertTrue("climate.my_car_climate" in hub.ui.value.pending) // the timeout didn't end the command
+        assertNull(hub.ui.value.message)
+        advanceTimeBy(15_000); runCurrent()
+        port.emit(diff("climate.my_car_climate", "heat_cool")); runCurrent()
+        assertFalse("climate.my_car_climate" in hub.ui.value.pending)
+        assertNull(hub.ui.value.message)
+        advanceTimeBy(CAR_CONFIRM_MS); runCurrent()
+        assertNull(hub.ui.value.message)
+    }
+
+    @Test fun `cop timeout staysPending untilWindowEnds`() = runTest {
+        val hub = openedWithCars()
+        port.callResult = HaResult.Timeout
+        hub.toggleCop("my_car")
+        runCurrent()
+        assertTrue("climate.my_car_cabin_overheat_protection" in hub.ui.value.pending)
+        advanceTimeBy(CAR_CONFIRM_MS + 1); runCurrent()
+        assertTrue(hub.ui.value.pending.isEmpty())
+        assertEquals("Couldn't reach My Car's overheat protection", hub.ui.value.message)
     }
 
     @Test fun `cop otherError couldntMessage notBlocked`() = runTest {

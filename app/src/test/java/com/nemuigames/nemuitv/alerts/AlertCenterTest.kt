@@ -91,7 +91,9 @@ private class AlertFakePort : HaPort {
         return AlertSub().also { subs += it }
     }
 
-    override suspend fun callServiceForResult(domain: String, service: String, data: JsonObject, target: JsonObject?): HaResult =
+    override suspend fun callServiceForResult(
+        domain: String, service: String, data: JsonObject, target: JsonObject?, timeoutMs: Long,
+    ): HaResult =
         HaResult.Ok(null)
 
     fun emit(event: String) { subs.last().channel.trySend(j(event).jsonObject) }

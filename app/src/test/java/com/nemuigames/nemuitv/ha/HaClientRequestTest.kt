@@ -87,6 +87,11 @@ class HaClientRequestTest {
         assertEquals(HaResult.Timeout, waitFor { c.request("x/y", timeoutMs = 300) })
     }
 
+    @Test fun `callServiceForResult honorsItsTimeout`() {
+        val c = client(); connected(c, server(FakeHa(respond = { type, _, _ -> type == "call_service" })))
+        assertEquals(HaResult.Timeout, waitFor { c.callServiceForResult("climate", "turn_on", buildJsonObject { }, timeoutMs = 300) })
+    }
+
     @Test fun request_dropMidway_returnsNotConnected() {
         val c = client(); connected(c, server(FakeHa(respond = { type, _, ws -> (type == "x/y").also { if (it) ws.close(1001, "bye") } })))
         assertEquals(HaResult.NotConnected, waitFor { c.request("x/y") })
