@@ -155,6 +155,16 @@ class StripTextTest {
         assertEquals(listOf("my_car", "second_car", "bravo", "zeta"), buildStrip(m, base, c).cars.map { it.prefix })
     }
 
+    @Test fun `chip asleep is not charging`() {
+        for (v in listOf("off", "unavailable")) {
+            val s = base + ("binary_sensor.my_car_status" to st(v))
+            val chip = buildStrip(model, s, cfg).cars[0]
+            assertFalse(chip.charging)
+            assertTrue(chip.asleep)
+        }
+        assertFalse(buildStrip(model, base, cfg).cars[0].asleep)
+    }
+
     @Test fun cars_asleepMissing() {
         val s = base - "sensor.second_car_battery_level" + ("sensor.my_car_battery_level" to st("unavailable"))
         val cars = buildStrip(model, s, cfg).cars

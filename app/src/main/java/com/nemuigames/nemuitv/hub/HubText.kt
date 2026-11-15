@@ -19,9 +19,9 @@ fun stripItems(strip: Strip): List<StripItem> = buildList {
     strip.cars.forEach { add(StripItem(carText(it), carColor = it.color)) }
 }
 
-/** `My Car 97% ⚡` (⚡ only while charging; `—` when the battery level is unknown). */
+/** `My Car 97% ⚡` (⚡ only while charging, 💤 while asleep or unreachable; `—` when the battery level is unknown). */
 fun carText(car: CarChip): String =
-    "${car.name} ${car.percent?.let { "$it%" } ?: "—"}" + if (car.charging) " ⚡" else ""
+    "${car.name} ${car.percent?.let { "$it%" } ?: "—"}" + if (car.asleep) " 💤" else if (car.charging) " ⚡" else ""
 
 /** A device tile's state line: `On · 80%` (dimmable and on), `On`, `Off`, `Unavailable`. */
 fun tileStateLine(t: TileUi): String = when {

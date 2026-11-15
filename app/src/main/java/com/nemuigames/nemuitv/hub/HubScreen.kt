@@ -317,7 +317,7 @@ fun HubScreen(core: NemuiCore, onExit: () -> Unit) {
                                     cycles = hub.runningCycles(nowMs),
                                 )
                                 selected == TESLA -> TeslaPane(
-                                    cards = teslaCards(ui.model!!, ui.states, core.hubConfig), inert = inert || sheet != null,
+                                    cards = teslaCards(ui.model!!, ui.states, core.hubConfig, System.currentTimeMillis(), java.time.ZoneId.systemDefault()), inert = inert || sheet != null,
                                 )
                                 else -> PaneNote("Coming in the next update")
                             }

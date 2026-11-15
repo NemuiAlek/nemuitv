@@ -78,7 +78,7 @@ private fun CarCard(c: CarStats, modifier: Modifier) {
                 Box(Modifier.fillMaxWidth(barFraction(c.percent)).fillMaxHeight().background(BarGreen))
             }
             Spacer(Modifier.height(8.dp))
-            Text(c.chargingText, fontSize = 12.sp, color = Jt.TextPrimary)
+            Text(c.statusText, fontSize = 12.sp, color = Jt.TextPrimary)
             Spacer(Modifier.height(4.dp))
             StatLine("Range", c.rangeText)
             StatLine("Odometer", c.odometerText)

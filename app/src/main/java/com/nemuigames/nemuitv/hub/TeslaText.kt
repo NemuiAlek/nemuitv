@@ -4,16 +4,55 @@ import com.nemuigames.nemuitv.config.DEFAULT_CAR_COLOR
 import com.nemuigames.nemuitv.config.HubConfig
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
 
 private const val DASH = "—"
 
 data class Tire(val text: String, val low: Boolean)
+enum class CarAwake { AWAKE, ASLEEP, UNREACHABLE }
+
 data class CarStats(
     val prefix: String, val name: String, val color: String, val percent: Int?, val percentText: String,
-    val chargingText: String, val rangeText: String, val odometerText: String, val tires: Map<String, Tire>,
+    val awake: CarAwake, val statusText: String, val rangeText: String, val odometerText: String,
+    val insideText: String, val outsideText: String, val climateOn: Boolean?, val copText: String?,
+    val tires: Map<String, Tire>,
 )
+
+private val TimeFmt = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
+private val DateTimeFmt = DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.US)
+
+/** When the car's data last changed: `6:24 AM` today, `Yesterday 6:24 PM`, else `Nov 13, 6:24 AM`. */
+fun lastUpdateText(atMs: Long, nowMs: Long, zone: ZoneId): String {
+    val at = Instant.ofEpochMilli(atMs).atZone(zone)
+    val today = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
+    return when (at.toLocalDate()) {
+        today -> TimeFmt.format(at)
+        today.minusDays(1) -> "Yesterday ${TimeFmt.format(at)}"
+        else -> DateTimeFmt.format(at)
+    }
+}
+
+fun carAwake(status: EntityState?): CarAwake = when {
+    status == null -> CarAwake.AWAKE
+    status.state == "on" -> CarAwake.AWAKE
+    status.state == "off" -> CarAwake.ASLEEP
+    status.state == "unavailable" || status.state == "unknown" -> CarAwake.UNREACHABLE
+    else -> CarAwake.AWAKE
+}
+
+private fun temperature(s: EntityState?, label: String): String =
+    number(s)?.let { "$label ${it.roundToInt()}°" } ?: "$label $DASH"
+
+private fun copLabel(s: EntityState): String = when (s.state) {
+    "cool" -> "On"
+    "fan_only" -> "No A/C"
+    "off" -> "Off"
+    else -> DASH
+}
 
 /** Low only when the sensor reports psi; other units are never judged against the psi threshold. */
 fun tireLow(psi: Double?, unit: String?, threshold: Double): Boolean =
@@ -29,7 +68,12 @@ private fun withUnit(s: EntityState?, grouped: Boolean): String {
     return unit(s)?.let { "$text $it" } ?: text
 }
 
-fun carStats(prefix: String, states: Map<String, EntityState>, cfg: HubConfig): CarStats {
+fun carStats(
+    prefix: String, states: Map<String, EntityState>, cfg: HubConfig,
+    nowMs: Long, zone: ZoneId, climateId: String?, copId: String?,
+): CarStats {
+    val statusState = states["binary_sensor.${prefix}_status"]
+    val awake = carAwake(statusState)
     val level = states["sensor.${prefix}_battery_level"]
     val charging = states["sensor.${prefix}_charging"]
     val percent = number(level)?.roundToInt()
@@ -46,16 +90,26 @@ fun carStats(prefix: String, states: Map<String, EntityState>, cfg: HubConfig): 
         color = cfg.carColors[prefix] ?: DEFAULT_CAR_COLOR,
         percent = percent,
         percentText = percent?.let { "$it%" } ?: DASH,
-        chargingText = when {
-            isUnavailable(charging) -> DASH
-            charging!!.state == "charging" -> "⚡ Charging"
-            else -> "Not charging"
+        awake = awake,
+        statusText = when (awake) {
+            CarAwake.AWAKE -> when {
+                isUnavailable(charging) -> DASH
+                charging!!.state == "charging" -> "⚡ Charging"
+                else -> "Not charging"
+            }
+            CarAwake.ASLEEP -> statusState?.lastChangedMs
+                ?.let { "💤 Asleep · last update ${lastUpdateText(it, nowMs, zone)}" } ?: "💤 Asleep"
+            CarAwake.UNREACHABLE -> "Car not reachable"
         },
+        insideText = temperature(states["sensor.${prefix}_inside_temperature"], "Inside"),
+        outsideText = temperature(states["sensor.${prefix}_outside_temperature"], "Outside"),
+        climateOn = climateId?.let { states[it]?.state == "heat_cool" },
+        copText = copId?.let { id -> states[id]?.let(::copLabel) ?: DASH },
         rangeText = withUnit(states["sensor.${prefix}_battery_range"], grouped = false),
         odometerText = withUnit(states["sensor.${prefix}_odometer"], grouped = true),
         tires = tires,
     )
 }
 
-fun teslaCards(model: HubModel, states: Map<String, EntityState>, cfg: HubConfig): List<CarStats> =
-    orderedCars(model.cars, cfg).map { carStats(it, states, cfg) }
+fun teslaCards(model: HubModel, states: Map<String, EntityState>, cfg: HubConfig, nowMs: Long, zone: ZoneId): List<CarStats> =
+    orderedCars(model.cars, cfg).map { carStats(it, states, cfg, nowMs, zone, null, null) }

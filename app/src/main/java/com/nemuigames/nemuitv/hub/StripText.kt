@@ -7,7 +7,9 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlin.math.roundToInt
 
-data class CarChip(val prefix: String, val name: String, val percent: Int?, val charging: Boolean, val color: String)
+data class CarChip(val prefix: String, val name: String, val percent: Int?, val charging: Boolean, val color: String,
+    val asleep: Boolean = false,
+)
 enum class LockStatus { LOCKED, UNLOCKED, JAMMED, UNAVAILABLE, NONE }
 
 data class Strip(
@@ -68,12 +70,14 @@ fun buildStrip(model: HubModel, states: Map<String, EntityState>, cfg: HubConfig
     val people = if (home.isEmpty()) "Nobody home" else home.joinToString(", ")
 
     val cars = orderedCars(model.cars, cfg).map { p ->
+        val awake = carAwake(states["binary_sensor.${p}_status"])
         CarChip(
             prefix = p,
             name = carDisplayName(p),
             percent = states["sensor.${p}_battery_level"]?.state?.toDoubleOrNull()?.roundToInt(),
-            charging = states["sensor.${p}_charging"]?.state == "charging",
+            charging = awake == CarAwake.AWAKE && states["sensor.${p}_charging"]?.state == "charging",
             color = cfg.carColors[p] ?: DEFAULT_CAR_COLOR,
+            asleep = awake != CarAwake.AWAKE,
         )
     }
     return Strip(lock, lockStatus, lockWarning, insideTemp, lightsOnCount(model.rooms, states), people, cars)
