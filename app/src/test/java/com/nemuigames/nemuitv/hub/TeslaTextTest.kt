@@ -41,71 +41,39 @@ class TeslaTextTest {
 
     @Test fun `asleep replaces charging line`() {
         val s = full("my_car") + stat("my_car", "off", at(13, 6, 24))
-        val c = carStats("my_car", s, cfg, NOW, NY, null, null)
+        val c = carStats("my_car", s, cfg, NOW, NY)
         assertEquals(CarAwake.ASLEEP, c.awake)
         assertEquals("💤 Asleep · last update Nov 13, 6:24 AM", c.statusText)
         assertFalse(c.statusText.contains("Charging"))
     }
 
     @Test fun `asleep without last change`() =
-        assertEquals("💤 Asleep", carStats("my_car", full("my_car") + stat("my_car", "off"), cfg, NOW, NY, null, null).statusText)
+        assertEquals("💤 Asleep", carStats("my_car", full("my_car") + stat("my_car", "off"), cfg, NOW, NY).statusText)
 
     @Test fun `unreachable states`() {
         for (v in listOf("unavailable", "unknown")) {
-            val c = carStats("my_car", full("my_car") + stat("my_car", v), cfg, NOW, NY, null, null)
+            val c = carStats("my_car", full("my_car") + stat("my_car", v), cfg, NOW, NY)
             assertEquals(CarAwake.UNREACHABLE, c.awake)
             assertEquals("Car not reachable", c.statusText)
         }
     }
 
     @Test fun `awake and missing status keep the charging text`() {
-        assertEquals("⚡ Charging", carStats("my_car", full("my_car") + stat("my_car", "on"), cfg, NOW, NY, null, null).statusText)
-        assertEquals(CarAwake.AWAKE, carStats("my_car", full("my_car"), cfg, NOW, NY, null, null).awake)
+        assertEquals("⚡ Charging", carStats("my_car", full("my_car") + stat("my_car", "on"), cfg, NOW, NY).statusText)
+        assertEquals(CarAwake.AWAKE, carStats("my_car", full("my_car"), cfg, NOW, NY).awake)
     }
 
     @Test fun `temperatures round and dash`() {
         val s = full("my_car") + ("sensor.my_car_inside_temperature" to st("77.72", "°F")) +
             ("sensor.my_car_outside_temperature" to st("unavailable"))
-        val c = carStats("my_car", s, cfg, NOW, NY, null, null)
+        val c = carStats("my_car", s, cfg, NOW, NY)
         assertEquals("Inside 78°", c.insideText)
         assertEquals("Outside —", c.outsideText)
-        assertEquals("Inside —", carStats("my_car", full("my_car"), cfg, NOW, NY, null, null).insideText)
-    }
-
-    @Test fun `climate and cop mapping`() {
-        fun c(climate: String?, cop: String?, id: Boolean = true): CarStats {
-            val s = full("my_car") + listOfNotNull(
-                climate?.let { "climate.my_car_climate" to st(it) },
-                cop?.let { "climate.my_car_cabin_overheat_protection" to st(it) },
-            )
-            return carStats("my_car", s, cfg, NOW, NY, if (id) "climate.my_car_climate" else null,
-                if (id) "climate.my_car_cabin_overheat_protection" else null)
-        }
-        assertEquals(ClimateLook.ON, c("heat_cool", "cool").climate)
-        assertEquals(ClimateLook.OFF, c("off", "off").climate)
-        assertEquals("On", c("off", "cool").copText)
-        assertEquals("No A/C", c("off", "fan_only").copText)
-        assertEquals("Off", c("off", "off").copText)
-        assertEquals("—", c("off", "weird").copText)
-        assertEquals("—", c("off", "unavailable").copText)
-        assertNull(c("off", "off", id = false).copText)
-        assertNull(c("off", "off", id = false).climate)
-    }
-
-    @Test fun `climate look is unknown for an unknown, unavailable or missing state, never off`() {
-        fun look(state: String?): ClimateLook? {
-            val s = full("my_car") + listOfNotNull(state?.let { "climate.my_car_climate" to st(it) })
-            return carStats("my_car", s, cfg, NOW, NY, "climate.my_car_climate", null).climate
-        }
-        assertEquals(ClimateLook.UNKNOWN, look("unknown"))
-        assertEquals(ClimateLook.UNKNOWN, look("unavailable"))
-        assertEquals(ClimateLook.UNKNOWN, look(null))
-        assertEquals(ClimateLook.ON, look("heat_cool"))
-        assertEquals(ClimateLook.OFF, look("off"))
+        assertEquals("Inside —", carStats("my_car", full("my_car"), cfg, NOW, NY).insideText)
     }
 
     @Test fun carStats_fullValues() {
-        val c = carStats("my_car", full("my_car"), cfg, NOW, NY, null, null)
+        val c = carStats("my_car", full("my_car"), cfg, NOW, NY)
         assertEquals("My Car", c.name)
         assertEquals("red", c.color)
         assertEquals(97, c.percent)
@@ -121,7 +89,7 @@ class TeslaTextTest {
 
     @Test fun chargingStopped_notCharging() {
         val s = full("second_car") + ("sensor.second_car_charging" to st("stopped"))
-        val c = carStats("second_car", s, cfg, NOW, NY, null, null)
+        val c = carStats("second_car", s, cfg, NOW, NY)
         assertEquals("Not charging", c.statusText)
     }
 
@@ -132,7 +100,7 @@ class TeslaTextTest {
             "sensor.second_car_battery_range" to st("unknown"),
             "sensor.second_car_tire_pressure_front_left" to st("unavailable", "psi"),
         )
-        val c = carStats("second_car", s, cfg, NOW, NY, null, null)
+        val c = carStats("second_car", s, cfg, NOW, NY)
         assertEquals(null, c.percent)
         assertEquals("—", c.percentText)
         assertEquals("—", c.statusText)
@@ -143,7 +111,7 @@ class TeslaTextTest {
     }
 
     private fun tireAt(psi: String) = carStats(
-        "second_car", mapOf("sensor.second_car_tire_pressure_front_left" to st(psi, "psi")), cfg, NOW, NY, null, null,
+        "second_car", mapOf("sensor.second_car_tire_pressure_front_left" to st(psi, "psi")), cfg, NOW, NY,
     ).tires["front_left"]
 
     @Test fun tire_37_6_shows38_notLow() = assertEquals(Tire("38", false), tireAt("37.6"))
@@ -162,20 +130,5 @@ class TeslaTextTest {
     @Test fun cards_followCarColorsOrder() {
         val cards = teslaCards(model, full("second_car") + full("my_car"), cfg, NOW, NY)
         assertEquals(listOf("my_car", "second_car"), cards.map { it.prefix })
-    }
-
-    @Test fun `cards useModelClimateAndCopIds`() {
-        val m = model.copy(
-            carClimate = mapOf("my_car" to "climate.my_car_climate"),
-            carCop = mapOf("my_car" to "climate.my_car_cabin_overheat_protection"),
-        )
-        val states = full("second_car") + full("my_car") + mapOf(
-            "climate.my_car_climate" to st("heat_cool"), "climate.my_car_cabin_overheat_protection" to st("fan_only"),
-        )
-        val (mine, second) = teslaCards(m, states, cfg, NOW, NY)
-        assertEquals(ClimateLook.ON, mine.climate)
-        assertEquals("No A/C", mine.copText)
-        assertNull(second.climate)
-        assertNull(second.copText)
     }
 }

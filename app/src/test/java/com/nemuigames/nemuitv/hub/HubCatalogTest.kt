@@ -247,28 +247,6 @@ class HubCatalogTest {
         assertEquals(listOf("my_car", "second_car"), m.cars)
     }
 
-    @Test fun `carControls climatePresent copDisabledAbsent`() {
-        val m = buildHubModel(
-            reg.copy(entities = entities + listOf(
-                e("climate.my_car_climate", device = "d_car1"),
-                e("climate.my_car_cabin_overheat_protection", device = "d_car1", disabled = "integration"),
-                e("climate.second_car_cabin_overheat_protection", device = "d_car2"),
-            )),
-            hubCfg,
-        )
-        assertEquals(mapOf("my_car" to "climate.my_car_climate", "second_car" to "climate.second_car_climate"), m.carClimate)
-        assertEquals(mapOf("second_car" to "climate.second_car_cabin_overheat_protection"), m.carCop)
-    }
-
-    @Test fun `carControls absentWhenNoEntity`() {
-        assertEquals(mapOf("second_car" to "climate.second_car_climate"), model.carClimate)
-        assertTrue(model.carCop.isEmpty())
-    }
-
-    @Test fun `carControls climateNotTheHouseThermostat`() {
-        assertEquals("climate.house", model.thermostat)
-    }
-
     @Test fun `car device in an area is not the house thermostat and its switch is not a room tile`() {
         // My Car's device gets an HA area; its entities are named to sort before the house thermostat.
         val m = buildHubModel(
@@ -276,7 +254,6 @@ class HubCatalogTest {
                 devices = devices.map { if (it.id == "d_car1") it.copy(areaId = "kitchen") else it },
                 entities = entities + listOf(
                     e("climate.my_car_climate", device = "d_car1", name = "AAA Car Climate"),
-                    e("climate.my_car_cabin_overheat_protection", device = "d_car1", name = "AAB Overheat"),
                     e("switch.my_car_sentry_mode", device = "d_car1", name = "Sentry"),
                 ),
             ),
@@ -286,9 +263,6 @@ class HubCatalogTest {
         val ids = m.rooms.flatMap { it.tiles }.map { it.entityId }
         assertFalse("switch.my_car_sentry_mode" in ids)
         assertTrue("switch.kitchen" in ids)
-        // The car's controls still work from the Tesla pane.
-        assertEquals("climate.my_car_climate", m.carClimate["my_car"])
-        assertEquals("climate.my_car_cabin_overheat_protection", m.carCop["my_car"])
     }
 
     private fun st(s: String) = EntityState(s, JsonObject(emptyMap()))

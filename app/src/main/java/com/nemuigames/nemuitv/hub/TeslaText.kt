@@ -15,21 +15,10 @@ private const val DASH = "—"
 data class Tire(val text: String, val low: Boolean)
 enum class CarAwake { AWAKE, ASLEEP, UNREACHABLE }
 
-/** What the car's fan button shows: on (`heat_cool`), off, or unknown (no / unknown / unavailable state). */
-enum class ClimateLook { ON, OFF, UNKNOWN }
-
-/** `heat_cool` = on; unknown, unavailable or missing = [ClimateLook.UNKNOWN] (never shown as off); else off. */
-fun climateLook(s: EntityState?): ClimateLook = when {
-    isUnavailable(s) -> ClimateLook.UNKNOWN
-    s!!.state == "heat_cool" -> ClimateLook.ON
-    else -> ClimateLook.OFF
-}
-
 data class CarStats(
     val prefix: String, val name: String, val color: String, val percent: Int?, val percentText: String,
     val awake: CarAwake, val statusText: String, val rangeText: String, val odometerText: String,
-    val insideText: String, val outsideText: String, /** Null = the car has no climate entity (no fan button). */
-    val climate: ClimateLook?, val copText: String?,
+    val insideText: String, val outsideText: String,
     val tires: Map<String, Tire>,
 )
 
@@ -58,13 +47,6 @@ fun carAwake(status: EntityState?): CarAwake = when {
 private fun temperature(s: EntityState?, label: String): String =
     number(s)?.let { "$label ${it.roundToInt()}°" } ?: "$label $DASH"
 
-private fun copLabel(s: EntityState): String = when (s.state) {
-    "cool" -> "On"
-    "fan_only" -> "No A/C"
-    "off" -> "Off"
-    else -> DASH
-}
-
 /** Low only when the sensor reports psi; other units are never judged against the psi threshold. */
 fun tireLow(psi: Double?, unit: String?, threshold: Double): Boolean =
     psi != null && unit == "psi" && psi < threshold
@@ -81,7 +63,7 @@ private fun withUnit(s: EntityState?, grouped: Boolean): String {
 
 fun carStats(
     prefix: String, states: Map<String, EntityState>, cfg: HubConfig,
-    nowMs: Long, zone: ZoneId, climateId: String?, copId: String?,
+    nowMs: Long, zone: ZoneId,
 ): CarStats {
     val statusState = states["binary_sensor.${prefix}_status"]
     val awake = carAwake(statusState)
@@ -114,8 +96,6 @@ fun carStats(
         },
         insideText = temperature(states["sensor.${prefix}_inside_temperature"], "Inside"),
         outsideText = temperature(states["sensor.${prefix}_outside_temperature"], "Outside"),
-        climate = climateId?.let { climateLook(states[it]) },
-        copText = copId?.let { id -> states[id]?.let(::copLabel) ?: DASH },
         rangeText = withUnit(states["sensor.${prefix}_battery_range"], grouped = false),
         odometerText = withUnit(states["sensor.${prefix}_odometer"], grouped = true),
         tires = tires,
@@ -123,4 +103,4 @@ fun carStats(
 }
 
 fun teslaCards(model: HubModel, states: Map<String, EntityState>, cfg: HubConfig, nowMs: Long, zone: ZoneId): List<CarStats> =
-    orderedCars(model.cars, cfg).map { carStats(it, states, cfg, nowMs, zone, model.carClimate[it], model.carCop[it]) }
+    orderedCars(model.cars, cfg).map { carStats(it, states, cfg, nowMs, zone) }

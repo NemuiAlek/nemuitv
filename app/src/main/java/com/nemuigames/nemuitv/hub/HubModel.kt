@@ -22,8 +22,4 @@ data class HubModel(
     val sceneFlags: Map<String, String> = emptyMap(),
     /** Room tiles whose device reports a running cycle (washer, dryer…); see [Cycle]. */
     val cycles: List<Cycle> = emptyList(),
-    /** Car prefix -> `climate.<p>_climate`, only for cars whose climate entity exists and is enabled. */
-    val carClimate: Map<String, String> = emptyMap(),
-    /** Car prefix -> `climate.<p>_cabin_overheat_protection`, same rule. */
-    val carCop: Map<String, String> = emptyMap(),
 )

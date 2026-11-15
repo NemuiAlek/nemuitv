@@ -133,7 +133,6 @@ fun HubScreen(core: NemuiCore, onExit: () -> Unit) {
     var selected by remember { mutableStateOf(OVERVIEW) }
     var sheet by remember { mutableStateOf<HubSheet?>(null) }
     var paneHasFocus by remember { mutableStateOf(false) }
-    var railHasFocus by remember { mutableStateOf(false) }
     val railFocus = remember { HashMap<String, FocusRequester>() }
     fun railReq(key: String) = railFocus.getOrPut(key) { FocusRequester() }
     val tileFocus = remember { HashMap<String, FocusRequester>() }
@@ -141,7 +140,6 @@ fun HubScreen(core: NemuiCore, onExit: () -> Unit) {
     val roomOffFocus = remember { FocusRequester() }
     val overviewFirst = remember { FocusRequester() }
     val thermostatFocus = remember { FocusRequester() }
-    val teslaFirst = remember { FocusRequester() }
     val railState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
@@ -174,9 +172,7 @@ fun HubScreen(core: NemuiCore, onExit: () -> Unit) {
     fun enterPane() {
         when (selected) {
             OVERVIEW -> { overviewFirst.tryFocus() }
-            // The first car's fan (or its COP row); nothing when no car has controls. Only → / OK on the rail item gets
-            // here, never ▲ ▼ through the rail (a control must not be focused by arriving on the pane).
-            TESLA -> { teslaFirst.tryFocus() }
+            TESLA -> Unit // nothing focusable on the Tesla pane
             else -> {
                 val r = currentRoom() ?: return
                 hub.tiles(r).firstOrNull()?.let { tileReq(it.tile.entityId).tryFocus() } ?: roomOffFocus.tryFocus()
@@ -242,15 +238,6 @@ fun HubScreen(core: NemuiCore, onExit: () -> Unit) {
         }
     }
 
-    // A focused Tesla control can vanish (its entity went away): focus would be orphaned and Back would leave the hub.
-    // After a frame with focus in neither the pane nor the rail, put it back on the rail.
-    LaunchedEffect(paneHasFocus, railHasFocus) {
-        if (!paneHasFocus && !railHasFocus && selected == TESLA && sheet == null) {
-            withFrameNanos { }
-            if (!paneHasFocus && !railHasFocus && selected == TESLA && sheet == null) focusRail()
-        }
-    }
-
     BackHandler {
         when {
             sheet != null -> closeSheet(save = true)
@@ -274,7 +261,7 @@ fun HubScreen(core: NemuiCore, onExit: () -> Unit) {
                     lastKey = railKeys.last(), inert = inert,
                     onFocused = { selected = it },
                     onEnter = { enterPane() },
-                    modifier = Modifier.width(RailWidth).onFocusChanged { railHasFocus = it.hasFocus },
+                    modifier = Modifier.width(RailWidth),
                 )
                 Spacer(Modifier.width(RailGap))
                 Column(Modifier.weight(1f)) {
@@ -329,24 +316,10 @@ fun HubScreen(core: NemuiCore, onExit: () -> Unit) {
                                     thermostatFocus = thermostatFocus,
                                     cycles = hub.runningCycles(nowMs),
                                 )
-                                selected == TESLA -> {
-                                    val m = ui.model!!
-                                    TeslaPane(
-                                        cards = teslaCards(m, ui.states, core.hubConfig, System.currentTimeMillis(), java.time.ZoneId.systemDefault()),
-                                        inert = inert || sheet != null,
-                                        controls = { p ->
-                                            CarControlsUi(
-                                                fanPending = m.carClimate[p]?.let { it in ui.pending } == true,
-                                                copPending = m.carCop[p]?.let { it in ui.pending } == true,
-                                                blocked = p in ui.blockedCars,
-                                            )
-                                        },
-                                        onFan = hub::toggleCarClimate,
-                                        onCop = hub::toggleCop,
-                                        onLeft = { focusRail() },
-                                        firstFocus = teslaFirst,
-                                    )
-                                }
+                                selected == TESLA -> TeslaPane(
+                                    cards = teslaCards(ui.model!!, ui.states, core.hubConfig, System.currentTimeMillis(), java.time.ZoneId.systemDefault()),
+                                    inert = inert || sheet != null,
+                                )
                                 else -> PaneNote("Coming in the next update")
                             }
                         }

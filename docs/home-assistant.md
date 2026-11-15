@@ -109,13 +109,11 @@ NemuiTV shows a Tesla page automatically when Home Assistant has a device whose 
 - `sensor.my_car_odometer`
 - `sensor.my_car_tire_pressure_front_left`, `_front_right`, `_rear_left`, `_rear_right`
 - `binary_sensor.my_car_status`: when it is `off`, the car is asleep. The page then shows "💤 Asleep · last update" with the time it went to sleep, instead of a charging state it can't know. The status strip shows 💤 after the percent.
-- `sensor.my_car_inside_temperature` and `sensor.my_car_outside_temperature`
-- `climate.my_car_climate`: a fan button next to the inside temperature turns the car's climate on (`heat_cool`, at the car's own set temperature) or off.
-- `climate.my_car_cabin_overheat_protection`: the "Overheat protection" row shows On, No A/C or Off. OK switches between On and Off. Home Assistant disables this entity by default, so enable it once per car (as an admin: Settings → Devices & services → the car → its entities → Cabin overheat protection → Enable). Until then the row is hidden.
+- `sensor.my_car_inside_temperature` and `sensor.my_car_outside_temperature`: shown as "Inside 78°   Outside 79°".
 
 Any of these can be missing: the page just leaves that part out.
 
-The fan and the overheat-protection row are the only car controls on the TV. They need the car's virtual key paired, which you do once from the Tesla app (that's part of setting up Tesla Fleet). Reading works without it. If a car's key isn't paired, the first press shows "My Car isn't connected for controls yet. Pair its key in the Tesla app." and that car's controls turn gray. They try again after Home Assistant reconnects, or after 30 minutes. Waking a sleeping car for a command can take up to 30 seconds.
+The Tesla page is read-only: it shows battery, charging (when the car is awake), "Asleep · last update", range, odometer, tire pressure, and inside and outside temperature. NemuiTV never sends a command to the car.
 
 The car must have a `sensor.<name>_battery_level` entity, and `<name>` is its key. The key becomes the car's name on screen (`my_car` shows as "My Car"). Tires below `hub.lowTirePsi` turn orange, and only when the sensor reports psi. Set a car's icon color with `hub.carColors`, like `{ "my_car": "white" }` (`white`, `gray` or `darkgray`; default `gray`).
 
@@ -129,4 +127,4 @@ Needs Home Assistant's Spotify integration, and the Spotify app on the TV signed
 
 ## What NemuiTV changes in Home Assistant
 
-It only reads, except when you use a control on the TV. Then it calls: `turn_on`/`turn_off` on lights, switches and fans, `light.turn_on` with a brightness, `homeassistant.turn_off` for a room's "all off", `script.turn_on` for scenes, `lock.lock`, climate `set_hvac_mode`/`set_temperature`, `climate.turn_on`/`turn_off` and `set_hvac_mode` on a car's climate and overheat protection, `media_player.select_source`, and the lofi calls above. It never creates or edits entities, automations or helpers.
+It only reads, except when you use a control on the TV. Then it calls: `turn_on`/`turn_off` on lights, switches and fans, `light.turn_on` with a brightness, `homeassistant.turn_off` for a room's "all off", `script.turn_on` for scenes, `lock.lock`, climate `set_hvac_mode`/`set_temperature`, `media_player.select_source`, and the lofi calls above. It never creates or edits entities, automations or helpers.

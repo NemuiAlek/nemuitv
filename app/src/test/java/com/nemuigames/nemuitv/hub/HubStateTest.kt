@@ -55,8 +55,6 @@ class FakePort : HaPort {
     var requestGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
     /** When true the registries also hold two scripts labeled for the hub plus a guest-mode flag. */
     var withScenes = false
-    /** When true the registries also hold a second car (other_car) and both cars' climate + overheat entities. */
-    var withCars = false
 
     val registries = mapOf(
         "config/area_registry/list" to j("""[{"area_id":"upstairs","name":"Upstairs"},{"area_id":"front_yard","name":"Front Yard"}]"""),
@@ -85,20 +83,6 @@ class FakePort : HaPort {
                 {"entity_id":"script.night_mode","labels":["nemuitv"]},
                 {"entity_id":"script.guest_mode","labels":["nemuitv"]},
                 {"entity_id":"input_boolean.guest_mode","labels":[]}
-            ]""").jsonArray
-            return HaResult.Ok(JsonArray(registries[type]!!.jsonArray + extra))
-        }
-        if (withCars && type == "config/device_registry/list") {
-            val extra = j("""[{"id":"d_oc","area_id":null,"name":"Other Car","manufacturer":"Tesla"}]""").jsonArray
-            return HaResult.Ok(JsonArray(registries[type]!!.jsonArray + extra))
-        }
-        if (withCars && type == "config/entity_registry/list") {
-            val extra = j("""[
-                {"entity_id":"sensor.other_car_battery_level","device_id":"d_oc","labels":[]},
-                {"entity_id":"climate.my_car_climate","device_id":"d_gm","labels":[]},
-                {"entity_id":"climate.my_car_cabin_overheat_protection","device_id":"d_gm","labels":[]},
-                {"entity_id":"climate.other_car_climate","device_id":"d_oc","labels":[]},
-                {"entity_id":"climate.other_car_cabin_overheat_protection","device_id":"d_oc","labels":[]}
             ]""").jsonArray
             return HaResult.Ok(JsonArray(registries[type]!!.jsonArray + extra))
         }
@@ -290,7 +274,7 @@ class HubStateTest {
         assertEquals(listOf(CONFIRM_WINDOW_MS + REPLY_GRACE_MS), port.callTimeouts)
         assertTrue(hub.tile("light.floor_2").pending)
         advanceTimeBy(1_001); runCurrent()
-        assertFalse(hub.tile("light.floor_2").pending) // before the 3 s window: a non-car timeout ends it
+        assertFalse(hub.tile("light.floor_2").pending) // before the 3 s window: a fast command's timeout ends it
         assertEquals("Couldn't reach Floor 2", hub.ui.value.message)
     }
 
@@ -537,271 +521,6 @@ class HubStateTest {
         assertEquals(ids.distinct(), ids)
     }
 
-    @Test fun `subscribedIds includeCarClimateAndCopWhenPresent`() {
-        val m = HubModel(
-            rooms = emptyList(), scenes = emptyList(), cameras = emptyList(), thermostat = null, locks = emptyList(),
-            lockBatteries = emptyList(), people = emptyList(), cars = listOf("my_car", "other_car"),
-            carClimate = mapOf("my_car" to "climate.my_car_climate"),
-            carCop = mapOf("other_car" to "climate.other_car_cabin_overheat_protection"),
-        )
-        val ids = subscribedIds(m)
-        assertTrue("climate.my_car_climate" in ids)
-        assertTrue("climate.other_car_cabin_overheat_protection" in ids)
-        assertFalse("climate.other_car_climate" in ids)
-        assertFalse("climate.my_car_cabin_overheat_protection" in ids)
-        assertTrue("binary_sensor.other_car_status" in ids)
-    }
-
-    // ---- 1.1.0: car climate + cabin overheat protection ----
-
-    private val NO_KEY = "Command failed: Vehicle did not recognize the key used to authorize command. Make sure your key is paired with the vehicle"
-    private val CAR_STATES = """{"a":{
-        "climate.my_car_climate":{"s":"off","a":{}},
-        "climate.my_car_cabin_overheat_protection":{"s":"off","a":{}},
-        "climate.other_car_climate":{"s":"heat_cool","a":{}},
-        "climate.other_car_cabin_overheat_protection":{"s":"cool","a":{}}
-    }}"""
-    private var nowMs = 1_000_000L
-
-    private fun TestScope.openedWithCars(): HubState {
-        port.withCars = true
-        val hub = HubState(port, { HubConfig() }, backgroundScope, clock = { nowMs })
-        hub.open(); runCurrent()
-        port.emit(INITIAL); runCurrent()
-        port.emit(CAR_STATES); runCurrent()
-        return hub
-    }
-
-    private fun target(c: Call) = c.target!!["entity_id"]!!.jsonPrimitive.content
-    private fun noKeyMessage(name: String) = "$name isn't connected for controls yet. Pair its key in the Tesla app."
-
-    @Test fun `carModel climateAndCopFromRegistry`() = runTest {
-        val hub = openedWithCars()
-        val m = hub.ui.value.model!!
-        assertEquals(mapOf("my_car" to "climate.my_car_climate", "other_car" to "climate.other_car_climate"), m.carClimate)
-        assertEquals("climate.house", m.thermostat)
-        assertTrue("climate.my_car_cabin_overheat_protection" in port.subPayloads.last()["entity_ids"]!!.jsonArray.map { it.jsonPrimitive.content })
-    }
-
-    @Test fun `carClimate offSendsTurnOn onSendsTurnOff`() = runTest {
-        val hub = openedWithCars()
-        hub.toggleCarClimate("my_car")
-        hub.toggleCarClimate("other_car")
-        runCurrent()
-        assertEquals(2, port.calls.size)
-        assertEquals(Call("climate", "turn_on", JsonObject(emptyMap()), port.calls[0].target), port.calls[0])
-        assertEquals("climate.my_car_climate", target(port.calls[0]))
-        assertEquals("turn_off", port.calls[1].service)
-        assertEquals("climate.other_car_climate", target(port.calls[1]))
-        assertTrue("climate.my_car_climate" in hub.ui.value.pending)
-        port.emit(diff("climate.my_car_climate", "heat_cool")); runCurrent()
-        assertFalse("climate.my_car_climate" in hub.ui.value.pending)
-        assertTrue("climate.other_car_climate" in hub.ui.value.pending)
-    }
-
-    @Test fun `cop setsNextHvacMode confirmedByThatMode`() = runTest {
-        val hub = openedWithCars()
-        hub.toggleCop("my_car")
-        hub.toggleCop("other_car")
-        runCurrent()
-        assertEquals("set_hvac_mode", port.calls[0].service)
-        assertEquals("climate.my_car_cabin_overheat_protection", target(port.calls[0]))
-        assertEquals("cool", port.calls[0].data["hvac_mode"]!!.jsonPrimitive.content)
-        assertEquals("off", port.calls[1].data["hvac_mode"]!!.jsonPrimitive.content)
-        port.emit(diff("climate.my_car_cabin_overheat_protection", "fan_only")); runCurrent()
-        assertTrue("climate.my_car_cabin_overheat_protection" in hub.ui.value.pending) // not the asked mode
-        port.emit(diff("climate.my_car_cabin_overheat_protection", "cool")); runCurrent()
-        assertFalse("climate.my_car_cabin_overheat_protection" in hub.ui.value.pending)
-    }
-
-    @Test fun `carClimate asleepCar pending45sThenCouldntReach notBlocked`() = runTest {
-        val hub = openedWithCars()
-        hub.toggleCarClimate("my_car")
-        runCurrent()
-        advanceTimeBy(44_999); runCurrent()
-        assertTrue("climate.my_car_climate" in hub.ui.value.pending)
-        assertNull(hub.ui.value.message)
-        advanceTimeBy(2); runCurrent()
-        assertFalse("climate.my_car_climate" in hub.ui.value.pending)
-        assertEquals("Couldn't reach My Car's climate", hub.ui.value.message)
-        assertTrue(hub.ui.value.blockedCars.isEmpty())
-    }
-
-    @Test fun `carClimate noKeyReplyAfter20s stillBlocks noCouldntReach`() = runTest {
-        val hub = openedWithCars()
-        port.callDelayMs = 20_000 // asleep car: Tesla tries to wake it before refusing the unpaired key
-        port.callResult = HaResult.Error(com.nemuigames.nemuitv.ha.HaError("home_assistant_error", NO_KEY))
-        hub.toggleCarClimate("my_car")
-        runCurrent()
-        assertEquals(listOf(CAR_CONFIRM_MS + REPLY_GRACE_MS), port.callTimeouts)
-        advanceTimeBy(19_999); runCurrent()
-        assertTrue("climate.my_car_climate" in hub.ui.value.pending)
-        assertNull(hub.ui.value.message)
-        advanceTimeBy(2); runCurrent()
-        assertEquals(setOf("my_car"), hub.ui.value.blockedCars)
-        assertEquals(noKeyMessage("My Car"), hub.ui.value.message)
-        assertTrue(hub.ui.value.pending.isEmpty())
-        advanceTimeBy(CAR_CONFIRM_MS); runCurrent() // the window's end must not add "Couldn't reach"
-        assertFalse(hub.ui.value.message?.startsWith("Couldn't") == true)
-    }
-
-    @Test fun `carClimate timeoutAt10s staysPending stateAt25sConfirms`() = runTest {
-        val hub = openedWithCars()
-        port.callDelayMs = 10_000
-        port.callResult = HaResult.Timeout
-        hub.toggleCarClimate("my_car")
-        runCurrent()
-        advanceTimeBy(10_001); runCurrent()
-        assertTrue("climate.my_car_climate" in hub.ui.value.pending) // the timeout didn't end the command
-        assertNull(hub.ui.value.message)
-        advanceTimeBy(15_000); runCurrent()
-        port.emit(diff("climate.my_car_climate", "heat_cool")); runCurrent()
-        assertFalse("climate.my_car_climate" in hub.ui.value.pending)
-        assertNull(hub.ui.value.message)
-        advanceTimeBy(CAR_CONFIRM_MS); runCurrent()
-        assertNull(hub.ui.value.message)
-    }
-
-    @Test fun `cop timeout staysPending untilWindowEnds`() = runTest {
-        val hub = openedWithCars()
-        port.callResult = HaResult.Timeout
-        hub.toggleCop("my_car")
-        runCurrent()
-        assertTrue("climate.my_car_cabin_overheat_protection" in hub.ui.value.pending)
-        advanceTimeBy(CAR_CONFIRM_MS + 1); runCurrent()
-        assertTrue(hub.ui.value.pending.isEmpty())
-        assertEquals("Couldn't reach My Car's overheat protection", hub.ui.value.message)
-    }
-
-    @Test fun `cop otherError couldntMessage notBlocked`() = runTest {
-        val hub = openedWithCars()
-        port.callResult = HaResult.Error(com.nemuigames.nemuitv.ha.HaError("home_assistant_error", "Command failed: vehicle unavailable"))
-        hub.toggleCop("my_car")
-        runCurrent()
-        assertEquals("Couldn't reach My Car's overheat protection", hub.ui.value.message)
-        assertTrue(hub.ui.value.blockedCars.isEmpty())
-    }
-
-    @Test fun `noKeyError blocksThatCarOnly`() = runTest {
-        val hub = openedWithCars()
-        port.callResult = HaResult.Error(com.nemuigames.nemuitv.ha.HaError("home_assistant_error", NO_KEY))
-        hub.toggleCop("my_car")
-        runCurrent()
-        assertEquals(setOf("my_car"), hub.ui.value.blockedCars)
-        assertEquals(noKeyMessage("My Car"), hub.ui.value.message)
-        assertTrue(hub.ui.value.pending.isEmpty())
-
-        port.callResult = HaResult.Ok(null)
-        advanceTimeBy(MESSAGE_MS + 1); runCurrent()
-        assertNull(hub.ui.value.message)
-        hub.toggleCarClimate("my_car")
-        hub.toggleCop("my_car")
-        runCurrent()
-        assertEquals(1, port.calls.size) // nothing sent while blocked
-        assertEquals(noKeyMessage("My Car"), hub.ui.value.message)
-
-        hub.toggleCarClimate("other_car")
-        runCurrent()
-        assertEquals(2, port.calls.size)
-        assertEquals("climate.other_car_climate", target(port.calls[1]))
-    }
-
-    @Test fun `noKeyBlock clearsOnReconnect`() = runTest {
-        val hub = openedWithCars()
-        port.callResult = HaResult.Error(com.nemuigames.nemuitv.ha.HaError("home_assistant_error", NO_KEY))
-        hub.toggleCarClimate("my_car")
-        runCurrent()
-        assertEquals(setOf("my_car"), hub.ui.value.blockedCars)
-
-        port.callResult = HaResult.Ok(null)
-        port.connectionCount.value = 2
-        runCurrent()
-        assertEquals(setOf("my_car"), hub.ui.value.blockedCars) // not live yet: still blocked
-        port.emit(INITIAL); port.emit(CAR_STATES); runCurrent()
-        assertTrue(hub.ui.value.blockedCars.isEmpty())
-        hub.toggleCarClimate("my_car")
-        runCurrent()
-        assertEquals(2, port.calls.size)
-    }
-
-    @Test fun `noKeyBlock clearsAfter30Minutes`() = runTest {
-        val hub = openedWithCars()
-        port.callResult = HaResult.Error(com.nemuigames.nemuitv.ha.HaError("home_assistant_error", NO_KEY))
-        hub.toggleCarClimate("my_car")
-        runCurrent()
-        port.callResult = HaResult.Ok(null)
-
-        nowMs += 30 * 60_000 - 1
-        hub.toggleCarClimate("my_car")
-        runCurrent()
-        assertEquals(1, port.calls.size)
-        assertEquals(setOf("my_car"), hub.ui.value.blockedCars)
-
-        nowMs += 1
-        hub.toggleCarClimate("my_car")
-        runCurrent()
-        assertEquals(2, port.calls.size)
-        assertTrue(hub.ui.value.blockedCars.isEmpty())
-    }
-
-    @Test fun `noKeyBlock grayLookClearsOnTimeWithoutPress`() = runTest {
-        val hub = openedWithCars()
-        port.callResult = HaResult.Error(com.nemuigames.nemuitv.ha.HaError("home_assistant_error", NO_KEY))
-        hub.toggleCarClimate("my_car")
-        runCurrent()
-        assertEquals(setOf("my_car"), hub.ui.value.blockedCars)
-
-        advanceTimeBy(CAR_BLOCK_MS - 1); runCurrent()
-        assertEquals(setOf("my_car"), hub.ui.value.blockedCars)
-        advanceTimeBy(1); runCurrent()
-        assertTrue(hub.ui.value.blockedCars.isEmpty())
-        assertEquals(1, port.calls.size) // cleared by the timer, not by a press
-    }
-
-    @Test fun `noKeyBlock close stopsItsTimer`() = runTest {
-        val hub = openedWithCars()
-        port.callResult = HaResult.Error(com.nemuigames.nemuitv.ha.HaError("home_assistant_error", NO_KEY))
-        hub.toggleCarClimate("my_car")
-        runCurrent()
-        hub.close()
-        runCurrent()
-        val afterClose = hub.ui.value
-        advanceTimeBy(CAR_BLOCK_MS + 1); runCurrent()
-        // The timer died with close(): nothing touches the closed hub's state.
-        assertEquals(setOf("my_car"), hub.ui.value.blockedCars)
-        assertEquals(afterClose.blockedCars, hub.ui.value.blockedCars)
-    }
-
-    @Test fun `carControls whilePending ignored`() = runTest {
-        val hub = openedWithCars()
-        hub.toggleCarClimate("my_car")
-        hub.toggleCop("my_car")
-        runCurrent()
-        hub.toggleCarClimate("my_car")
-        hub.toggleCop("my_car")
-        runCurrent()
-        assertEquals(2, port.calls.size)
-    }
-
-    @Test fun `carControls offline noCall`() = runTest {
-        val hub = openedWithCars()
-        port.status.value = HaStatus.DISCONNECTED
-        runCurrent()
-        hub.toggleCarClimate("my_car")
-        hub.toggleCop("my_car")
-        runCurrent()
-        assertTrue(port.calls.isEmpty())
-        assertEquals(OFFLINE_MESSAGE, hub.ui.value.message)
-    }
-
-    @Test fun `carControls unknownCar noCall`() = runTest {
-        val hub = openedWithCars()
-        hub.toggleCarClimate("no_car")
-        hub.toggleCop("no_car")
-        runCurrent()
-        assertTrue(port.calls.isEmpty())
-    }
-
     // ---- Task 4: scenes, lock, thermostat ----
 
     private val SCENE_STATES = """{"a":{
@@ -911,6 +630,22 @@ class HubStateTest {
         assertTrue(hub.ui.value.pending.isEmpty())
         advanceTimeBy(LOCK_CONFIRM_MS)
         assertNull(hub.ui.value.message)
+    }
+
+    @Test fun `lock timeoutReply staysPending stateConfirms windowEndsWithCouldnt`() = runTest {
+        val hub = opened()
+        port.emit(diff("lock.front_door", "unlocked")); runCurrent()
+        port.callDelayMs = 10_000
+        port.callResult = HaResult.Timeout
+        hub.lock("lock.front_door")
+        runCurrent()
+        assertEquals(listOf(LOCK_CONFIRM_MS + REPLY_GRACE_MS), port.callTimeouts)
+        advanceTimeBy(10_001); runCurrent()
+        assertTrue("lock.front_door" in hub.ui.value.pending) // the timeout didn't end the command
+        assertNull(hub.ui.value.message)
+        advanceTimeBy(LOCK_CONFIRM_MS - 10_000); runCurrent()
+        assertEquals("Couldn't lock Front door", hub.ui.value.message)
+        assertTrue(hub.ui.value.pending.isEmpty())
     }
 
     @Test fun lock_noConfirm20s_reverts() = runTest {
