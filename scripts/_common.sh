@@ -52,6 +52,39 @@ pick_device() {
   return 2
 }
 
+# "ADB debugging" connect path (TVs without a "Wireless debugging" screen).
+# tv_addr: print host:port from what the user typed (spaces trimmed, :5555 added when there is no port). Empty -> 1.
+tv_addr() {
+  local a="${1:-}"
+  a="${a#"${a%%[![:space:]]*}"}"; a="${a%"${a##*[![:space:]]}"}"
+  [[ -n "$a" ]] || return 1
+  case "$a" in *:*) ;; *) a="$a:5555" ;; esac
+  printf '%s\n' "$a"
+}
+# adb_debug_connect ADDR: disconnect any stale entry, then connect. 0 when adb says "connected to" (also "already connected to").
+# adb's output is left in CONNECT_OUT.
+adb_debug_connect() {
+  "$ADB_BIN" disconnect "$1" >/dev/null 2>&1 </dev/null || true
+  CONNECT_OUT=$("$ADB_BIN" connect "$1" 2>&1 </dev/null | tr -d '\r' || true)
+  grep -qi "connected to" <<<"$CONNECT_OUT"
+}
+# wait_authorized SECONDS: poll get-state every 2 s (WAIT_STEP_S overrides the pause, for tests).
+# 0 = "device"; 1 = timed out (last state in LAST_STATE). Prints the Allow hint once, the first time it sees "unauthorized".
+wait_authorized() {
+  local max=$(( ${1:-60} / 2 )) i hinted=0
+  [[ $max -ge 1 ]] || max=1
+  LAST_STATE=""
+  for ((i=0; i<max; i++)); do
+    LAST_STATE=$("${ADB[@]}" get-state 2>&1 </dev/null | tr -d '\r' | head -n 1 || true)
+    [[ "$LAST_STATE" == device ]] && return 0
+    if [[ "$LAST_STATE" == unauthorized && $hinted -eq 0 ]]; then
+      hinted=1; echo "Waiting for you to press Allow on the TV..."
+    fi
+    sleep "${WAIT_STEP_S:-2}"
+  done
+  return 1
+}
+
 # Stop early (before touching anything) if the device isn't reachable.
 require_device() {
   local rc=0

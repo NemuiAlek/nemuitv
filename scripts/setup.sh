@@ -29,7 +29,7 @@ say() { printf '%s\n' "$*"; }
 step() { printf '\n[%s] %s\n' "$1" "$2"; }
 fail() { trap - ERR; printf '\nStopped: %s\n' "$*" >&2; exit 1; }
 # Any other command that fails (set -e) is almost always adb losing the TV mid-run: say so instead of exiting silently.
-trap 'printf "\nStopped: lost contact with the TV. Reconnect Wireless debugging and run this again.\n" >&2' ERR
+trap 'printf "\nStopped: lost contact with the TV. Reconnect (Wireless debugging or ADB debugging) and run this again.\n" >&2' ERR
 
 # ---- 1. adb ----
 step 1/6 "Looking for adb (the tool that talks to your TV)"
@@ -106,11 +106,32 @@ else
     cat <<'TXT'
 No device is connected yet. On the TV:
   1. Settings > System > About, then press OK on "Android TV OS build" 7 times (Developer options turn on).
-  2. Settings > System > Developer options > turn on "Wireless debugging".
-  3. Choose "Pair device with pairing code". The TV shows an address (IP:port) and a 6-digit code.
-The pairing popup shows an address and a 6-digit code (use these first). After pairing, the Wireless debugging screen
-shows 'IP address & Port' (a different port) - that's the connect address.
 TXT
+    say 'In Settings > System > Developer options, which one does your TV have?'
+    say '  1. "Wireless debugging" (Google TV Streamer, Chromecast with Google TV)'
+    say '  2. "ADB debugging" or "Network debugging" (TVs with Google TV built in, e.g. Sony BRAVIA, TCL, Hisense)'
+    CHOICE=""
+    for attempt in 1 2 3; do
+      read -r -p "Type 1 or 2: " CHOICE || CHOICE=""
+      case "$CHOICE" in 1|2) break ;; *) CHOICE="" ;; esac
+    done
+    [[ -n "$CHOICE" ]] || fail "I need a 1 or a 2. Run setup again and pick the option your TV has."
+    if [[ "$CHOICE" == 2 ]]; then
+      say 'Turn on "ADB debugging". Your TV'"'"'s IP address is in Settings > Network & Internet > (your network).'
+      read -r -p "TV IP address: " TV_IP || TV_IP=""
+      TV_ADDR=$(tv_addr "$TV_IP") || fail "no TV IP address entered."
+      adb_debug_connect "$TV_ADDR" || fail "couldn't connect: $CONNECT_OUT
+Try these, then run setup again:
+  - Turn \"ADB debugging\" off and on again on the TV.
+  - The TV must be on Wi-Fi, not an Ethernet cable, on the same network as this computer.
+  - If your TV has \"Wireless debugging\" instead, run setup again and pick 1."
+      SERIAL="$TV_ADDR"; set_adb; say "Connected to $SERIAL."
+      say 'On the TV, choose "Always allow from this computer", then OK.'
+      wait_authorized 60 || fail "the TV didn't allow this computer (state: $LAST_STATE). Accept the prompt on the TV and run setup again."
+    else
+    say 'Turn on "Wireless debugging", then choose "Pair device with pairing code". The TV shows an address (IP:port) and a 6-digit code.'
+    say 'The pairing popup shows an address and a 6-digit code (use these first). After pairing, the Wireless debugging screen'
+    say "shows 'IP address & Port' (a different port) - that's the connect address."
     read -r -p "Pairing address (IP:port shown on the TV): " PAIR_ADDR || PAIR_ADDR=""
     [[ -n "$PAIR_ADDR" ]] || fail "no pairing address entered."
     read -r -p "Pairing code (6 digits): " PAIR_CODE || PAIR_CODE=""
@@ -126,6 +147,7 @@ Check the address and code on the TV (the code changes each time) and try again.
     grep -qi "connected to" <<<"$out" || fail "couldn't connect: $out"
     SERIAL="$CONN_ADDR"; set_adb; say "Connected to $SERIAL."
     say "If the TV asks 'Allow USB debugging?', choose Always allow."
+    fi
   fi
 fi
 require_device
@@ -196,5 +218,5 @@ say "  - Permissions: granted"
 say "  - Home button: on"
 say "  - Now Playing: on"
 say ""
-say "Continue on the TV (the Setup checklist opens). You can turn Wireless debugging off now."
+say "Continue on the TV (the Setup checklist opens). You can turn Wireless debugging / ADB debugging off now."
 "${ADB[@]}" shell am start -n "$PKG/.HomeActivity" </dev/null >/dev/null 2>&1 || true
