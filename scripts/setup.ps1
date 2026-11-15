@@ -150,6 +150,7 @@ if ($global:AdbSerial) {
             Say 'Turn on "ADB debugging". Your TV''s IP address is in Settings > Network & Internet > (your network).'
             $tvAddr = Get-TvAddr (Ask 'TV IP address')
             if (-not $tvAddr) { Fail 'no TV IP address entered.' }
+            Say 'On the TV, choose "Always allow from this computer", then OK.'
             if (-not (Connect-AdbDebug $tvAddr)) {
                 Fail ("couldn't connect: $($global:ConnectOut)`n" +
                     "Try these, then run setup again:`n" +
@@ -158,8 +159,7 @@ if ($global:AdbSerial) {
                     "  - If your TV has `"Wireless debugging`" instead, run setup again and pick 1.")
             }
             $global:AdbSerial = $tvAddr; Say "Connected to $($global:AdbSerial)."
-            Say 'On the TV, choose "Always allow from this computer", then OK.'
-            if (-not (Wait-Authorized 60)) { Fail "the TV didn't allow this computer (state: $($global:LastState)). Accept the prompt on the TV and run setup again." }
+            if (-not (Wait-Authorized 60)) { Fail "the TV didn't allow this computer (state: $($global:LastState)); accept the prompt on the TV, then run setup again." }
         } else {
         Say 'Turn on "Wireless debugging", then choose "Pair device with pairing code". The TV shows an address (IP:port) and a 6-digit code.'
         Say 'The pairing popup shows an address and a 6-digit code (use these first). After pairing, the Wireless debugging screen'

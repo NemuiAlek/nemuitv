@@ -118,13 +118,14 @@ function Get-TvAddr {
     if (-not $a.Contains(':')) { $a = "${a}:5555" }
     return $a
 }
-# Connect-AdbDebug ADDR: disconnect any stale entry, then connect. $true when adb says "connected to" (also "already connected to").
+# Connect-AdbDebug ADDR: disconnect any stale entry, then connect. $true when adb says "connected to" (also "already connected to"),
+# or "failed to authenticate" (first time: the TV is waiting for the user to accept; Wait-Authorized handles that).
 # adb's output is left in $global:ConnectOut.
 function Connect-AdbDebug {
     param([string]$addr)
     [void](Invoke-Adb @('disconnect', $addr) -NoSerial -NoLost)
     $global:ConnectOut = Invoke-Adb @('connect', $addr) -NoSerial -NoLost
-    return ($global:ConnectOut -match '(?i)connected to')
+    return ($global:ConnectOut -match '(?i)connected to|failed to authenticate')
 }
 # Wait-Authorized SECONDS: poll get-state every 2 s (env WAIT_STEP_S overrides the pause, for tests).
 # $true = "device"; $false = timed out (last state in $global:LastState). Prints the Allow hint once, the first time it sees "unauthorized".

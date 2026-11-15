@@ -119,14 +119,14 @@ TXT
       say 'Turn on "ADB debugging". Your TV'"'"'s IP address is in Settings > Network & Internet > (your network).'
       read -r -p "TV IP address: " TV_IP || TV_IP=""
       TV_ADDR=$(tv_addr "$TV_IP") || fail "no TV IP address entered."
+      say 'On the TV, choose "Always allow from this computer", then OK.'
       adb_debug_connect "$TV_ADDR" || fail "couldn't connect: $CONNECT_OUT
 Try these, then run setup again:
   - Turn \"ADB debugging\" off and on again on the TV.
   - The TV must be on Wi-Fi, not an Ethernet cable, on the same network as this computer.
   - If your TV has \"Wireless debugging\" instead, run setup again and pick 1."
       SERIAL="$TV_ADDR"; set_adb; say "Connected to $SERIAL."
-      say 'On the TV, choose "Always allow from this computer", then OK.'
-      wait_authorized 60 || fail "the TV didn't allow this computer (state: $LAST_STATE). Accept the prompt on the TV and run setup again."
+      wait_authorized 60 || fail "the TV didn't allow this computer (state: $LAST_STATE); accept the prompt on the TV, then run setup again."
     else
     say 'Turn on "Wireless debugging", then choose "Pair device with pairing code". The TV shows an address (IP:port) and a 6-digit code.'
     say 'The pairing popup shows an address and a 6-digit code (use these first). After pairing, the Wireless debugging screen'

@@ -61,12 +61,13 @@ tv_addr() {
   case "$a" in *:*) ;; *) a="$a:5555" ;; esac
   printf '%s\n' "$a"
 }
-# adb_debug_connect ADDR: disconnect any stale entry, then connect. 0 when adb says "connected to" (also "already connected to").
+# adb_debug_connect ADDR: disconnect any stale entry, then connect. 0 when adb says "connected to" (also "already connected to"),
+# or "failed to authenticate" (first time: the TV is waiting for the user to accept; wait_authorized handles that).
 # adb's output is left in CONNECT_OUT.
 adb_debug_connect() {
   "$ADB_BIN" disconnect "$1" >/dev/null 2>&1 </dev/null || true
   CONNECT_OUT=$("$ADB_BIN" connect "$1" 2>&1 </dev/null | tr -d '\r' || true)
-  grep -qi "connected to" <<<"$CONNECT_OUT"
+  grep -qiE "connected to|failed to authenticate" <<<"$CONNECT_OUT"
 }
 # wait_authorized SECONDS: poll get-state every 2 s (WAIT_STEP_S overrides the pause, for tests).
 # 0 = "device"; 1 = timed out (last state in LAST_STATE). Prints the Allow hint once, the first time it sees "unauthorized".

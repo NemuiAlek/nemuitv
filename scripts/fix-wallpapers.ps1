@@ -1,4 +1,4 @@
-# Convert the videos in wallpapers\ into what the TV plays smoothly: H.264, at most 1080p, 30 fps, BT.709 color tags,
+# Convert the videos in wallpapers\ into what the TV plays smoothly: H.264, at most 1080p, 30 fps, about 10 Mbps, BT.709 color tags,
 # no audio, as .mp4. Originals move to wallpapers\originals\. Needs ffmpeg (never installed for you).
 # Usage: scripts\fix-wallpapers.ps1
 param(
@@ -6,7 +6,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if ($Help) {
-    Write-Host 'Convert the videos in wallpapers\ into what the TV plays smoothly: H.264, at most 1080p, 30 fps, BT.709 color tags,'
+    Write-Host 'Convert the videos in wallpapers\ into what the TV plays smoothly: H.264, at most 1080p, 30 fps, about 10 Mbps, BT.709 color tags,'
     Write-Host 'no audio, as .mp4. Originals move to wallpapers\originals\. Needs ffmpeg (never installed for you).'
     Write-Host 'Usage: scripts\fix-wallpapers.ps1'
     exit 0
