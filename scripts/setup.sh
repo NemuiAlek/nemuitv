@@ -104,8 +104,7 @@ else
     fail "run this again with --serial ADDRESS for the TV you want."
   else
     cat <<'TXT'
-No device is connected yet. On the TV:
-  1. Settings > System > About, then press OK on "Android TV OS build" 7 times (Developer options turn on).
+No device is connected yet. First, on the TV: Settings > System > About, then press OK on "Android TV OS build" 7 times (Developer options turn on).
 TXT
     say 'In Settings > System > Developer options, which one does your TV have?'
     say '  1. "Wireless debugging" (Google TV Streamer, Chromecast with Google TV)'

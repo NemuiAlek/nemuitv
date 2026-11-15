@@ -75,7 +75,12 @@ wait_authorized() {
   [[ $max -ge 1 ]] || max=1
   LAST_STATE=""
   for ((i=0; i<max; i++)); do
-    LAST_STATE=$("${ADB[@]}" get-state 2>&1 </dev/null | tr -d '\r' | head -n 1 || true)
+    LAST_STATE=$("${ADB[@]}" get-state 2>&1 </dev/null | tr -d '\r' || true)
+    case "$LAST_STATE" in
+      *[Uu][Nn][Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Ee][Dd]*) LAST_STATE=unauthorized ;;
+      *[Oo][Ff][Ff][Ll][Ii][Nn][Ee]*) LAST_STATE=offline ;;
+      *) LAST_STATE=$(printf '%s\n' "$LAST_STATE" | head -n 1) ;;
+    esac
     [[ "$LAST_STATE" == device ]] && return 0
     if [[ "$LAST_STATE" == unauthorized && $hinted -eq 0 ]]; then
       hinted=1; echo "Waiting for you to press Allow on the TV..."
