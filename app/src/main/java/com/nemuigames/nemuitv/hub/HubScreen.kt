@@ -73,8 +73,6 @@ import com.nemuigames.nemuitv.home.Jt
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
-private const val OVERVIEW = "overview"
-private const val TESLA = "tesla"
 private fun roomKey(r: Room) = "room:${r.areaId}"
 
 // Locked layout (960×540 dp design canvas): rail and strip start just under
@@ -146,7 +144,8 @@ fun HubScreen(core: NemuiCore, onExit: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     val rooms = ui.model?.rooms.orEmpty()
-    val railKeys = listOf(OVERVIEW, TESLA) + rooms.map(::roomKey)
+    val hasCars = ui.model?.cars?.isNotEmpty() == true
+    val railKeys = railKeys(rooms.map(::roomKey), hasCars)
     val room = rooms.firstOrNull { roomKey(it) == selected }
     // Appliance cycles (washer, dryer…) count down: re-read the time every 30 s, only when the house has any.
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -164,8 +163,9 @@ fun HubScreen(core: NemuiCore, onExit: () -> Unit) {
     fun currentRoom(): Room? = hub.ui.value.model?.rooms?.firstOrNull { roomKey(it) == selected }
     fun focusRail() = scope.launch {
         val key = selected
-        val keys = listOf(OVERVIEW, TESLA) + hub.ui.value.model?.rooms.orEmpty().map(::roomKey)
-        val index = railIndex(keys.indexOf(key).coerceAtLeast(0))
+        val cars = hub.ui.value.model?.cars?.isNotEmpty() == true
+        val keys = railKeys(hub.ui.value.model?.rooms.orEmpty().map(::roomKey), cars)
+        val index = railIndex(keys.indexOf(key).coerceAtLeast(0), cars)
         if (railState.layoutInfo.visibleItemsInfo.none { it.index == index }) runCatching { railState.scrollToItem(index) }
         retryFocus { railReq(key).tryFocus() }
     }
@@ -226,6 +226,8 @@ fun HubScreen(core: NemuiCore, onExit: () -> Unit) {
     val camerasOn = selected == OVERVIEW && ui.model != null && lifecycleState.isAtLeast(Lifecycle.State.STARTED)
     LaunchedEffect(camerasOn, cameraIds) { core.cameras.setVisible(cameraIds, camerasOn) }
     DisposableEffect(core) { onDispose { core.cameras.setVisible(emptyList(), false) } }
+    // The selected pane's rail item vanished (the car went away): back to Overview.
+    LaunchedEffect(railKeys) { selected = validSelection(selected, railKeys) }
     // The selected room vanished from HA (renamed / emptied): back to Overview.
     LaunchedEffect(selected, ui.model) {
         if (ui.model != null && selected != OVERVIEW && selected != TESLA && room == null) {
@@ -252,7 +254,7 @@ fun HubScreen(core: NemuiCore, onExit: () -> Unit) {
                 }
             } else Row(Modifier.fillMaxSize()) {
                 HubRail(
-                    rooms = rooms, ui = ui, selected = selected, state = railState, railReq = ::railReq,
+                    rooms = rooms, hasCars = hasCars, ui = ui, selected = selected, state = railState, railReq = ::railReq,
                     lastKey = railKeys.last(), inert = inert,
                     onFocused = { selected = it },
                     onEnter = { enterPane() },
@@ -358,12 +360,10 @@ private fun PaneNote(text: String) {
     }
 }
 
-/** Rail list index of rail key #[keyIndex] (the divider sits after Overview and Tesla). */
-private fun railIndex(keyIndex: Int) = if (keyIndex >= 2) keyIndex + 1 else keyIndex
-
 @Composable
 private fun HubRail(
     rooms: List<Room>,
+    hasCars: Boolean,
     ui: HubUi,
     selected: String,
     state: LazyListState,
@@ -433,7 +433,7 @@ private fun HubRail(
     }
     LazyColumn(modifier.fillMaxSize().then(fade), state = state, verticalArrangement = Arrangement.spacedBy(5.dp)) {
         item(key = OVERVIEW) { RailItem(OVERVIEW, "⌂ Overview", 0) }
-        item(key = TESLA) { RailItem(TESLA, "🚗 Tesla", 0) }
+        if (hasCars) item(key = TESLA) { RailItem(TESLA, "🚗 Tesla", 0) }
         item(key = "divider") {
             Box(Modifier.fillMaxWidth().padding(vertical = 3.dp).height(1.dp).background(Color.White.copy(alpha = 0.2f)))
         }
