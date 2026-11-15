@@ -227,6 +227,26 @@ class HubCatalogTest {
         assertEquals(listOf("my_car", "second_car"), model.cars)
     }
 
+    @Test fun cars_disabledBatterySensorIsNoCar() {
+        val m = buildHubModel(
+            reg.copy(entities = entities.map {
+                if (it.entityId == "sensor.my_car_battery_level") it.copy(disabledBy = "config_entry") else it
+            }),
+            hubCfg,
+        )
+        assertEquals(listOf("second_car"), m.cars)
+    }
+
+    @Test fun cars_hiddenBatterySensorStillCounts() {
+        val m = buildHubModel(
+            reg.copy(entities = entities.map {
+                if (it.entityId == "sensor.my_car_battery_level") it.copy(hiddenBy = "user") else it
+            }),
+            hubCfg,
+        )
+        assertEquals(listOf("my_car", "second_car"), m.cars)
+    }
+
     private fun st(s: String) = EntityState(s, JsonObject(emptyMap()))
     private val room = Room("r", "R", listOf(
         Tile("light.a", "A", "light", false), Tile("light.k", "K", "light", true),

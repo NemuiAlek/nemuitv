@@ -93,7 +93,9 @@ fun buildHubModel(reg: Registries, cfg: HubConfig): HubModel {
     val teslaDevices = reg.devices.filter { it.manufacturer == "Tesla" }.map { it.id }
     val cars = teslaDevices.mapNotNull { devId ->
         reg.entities.firstOrNull {
-            it.deviceId == devId && it.entityId.startsWith("sensor.") && it.entityId.endsWith("_battery_level")
+            // Disabled = the integration/entity was turned off in HA, so no car. Hidden still counts: users hide car sensors.
+            it.deviceId == devId && it.disabledBy == null &&
+                it.entityId.startsWith("sensor.") && it.entityId.endsWith("_battery_level")
         }?.entityId?.removePrefix("sensor.")?.removeSuffix("_battery_level")
     }
 
