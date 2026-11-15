@@ -81,15 +81,27 @@ class TeslaTextTest {
             return carStats("my_car", s, cfg, NOW, NY, if (id) "climate.my_car_climate" else null,
                 if (id) "climate.my_car_cabin_overheat_protection" else null)
         }
-        assertEquals(true, c("heat_cool", "cool").climateOn)
-        assertEquals(false, c("off", "off").climateOn)
+        assertEquals(ClimateLook.ON, c("heat_cool", "cool").climate)
+        assertEquals(ClimateLook.OFF, c("off", "off").climate)
         assertEquals("On", c("off", "cool").copText)
         assertEquals("No A/C", c("off", "fan_only").copText)
         assertEquals("Off", c("off", "off").copText)
         assertEquals("—", c("off", "weird").copText)
         assertEquals("—", c("off", "unavailable").copText)
         assertNull(c("off", "off", id = false).copText)
-        assertNull(c("off", "off", id = false).climateOn)
+        assertNull(c("off", "off", id = false).climate)
+    }
+
+    @Test fun `climate look is unknown for an unknown, unavailable or missing state, never off`() {
+        fun look(state: String?): ClimateLook? {
+            val s = full("my_car") + listOfNotNull(state?.let { "climate.my_car_climate" to st(it) })
+            return carStats("my_car", s, cfg, NOW, NY, "climate.my_car_climate", null).climate
+        }
+        assertEquals(ClimateLook.UNKNOWN, look("unknown"))
+        assertEquals(ClimateLook.UNKNOWN, look("unavailable"))
+        assertEquals(ClimateLook.UNKNOWN, look(null))
+        assertEquals(ClimateLook.ON, look("heat_cool"))
+        assertEquals(ClimateLook.OFF, look("off"))
     }
 
     @Test fun carStats_fullValues() {
@@ -161,9 +173,9 @@ class TeslaTextTest {
             "climate.my_car_climate" to st("heat_cool"), "climate.my_car_cabin_overheat_protection" to st("fan_only"),
         )
         val (mine, second) = teslaCards(m, states, cfg, NOW, NY)
-        assertEquals(true, mine.climateOn)
+        assertEquals(ClimateLook.ON, mine.climate)
         assertEquals("No A/C", mine.copText)
-        assertNull(second.climateOn)
+        assertNull(second.climate)
         assertNull(second.copText)
     }
 }

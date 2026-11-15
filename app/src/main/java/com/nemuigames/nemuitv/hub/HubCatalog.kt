@@ -55,7 +55,11 @@ fun buildHubModel(reg: Registries, cfg: HubConfig): HubModel {
         return orig ?: dev ?: e.entityId
     }
 
-    val houseEntities = reg.entities.filter { usable(it) && isHouse(it) }
+    val teslaDevices = reg.devices.filter { it.manufacturer == "Tesla" }.map { it.id }
+    val teslaDeviceIds = teslaDevices.toSet()
+    // A car is never part of the house, even when its device has an HA area: its climate / overheat entity must not
+    // become the thermostat and its switches must not become room tiles (the Tesla pane shows the car).
+    val houseEntities = reg.entities.filter { usable(it) && isHouse(it) && it.deviceId !in teslaDeviceIds }
 
     val tilesByArea = LinkedHashMap<String, MutableList<Tile>>()
     houseEntities.filter { domainOf(it.entityId) in TILE_DOMAINS && it.entityCategory == null }.forEach { e ->
@@ -90,7 +94,6 @@ fun buildHubModel(reg: Registries, cfg: HubConfig): HubModel {
     val people = reg.entities.filter { domainOf(it.entityId) == "person" && usable(it) && it.entityId !in cfg.hiddenPeople }
         .map { it.entityId }
 
-    val teslaDevices = reg.devices.filter { it.manufacturer == "Tesla" }.map { it.id }
     val cars = teslaDevices.mapNotNull { devId ->
         reg.entities.firstOrNull {
             // Disabled = the integration/entity was turned off in HA, so no car. Hidden still counts: users hide car sensors.

@@ -12,16 +12,16 @@ class TeslaPaneTest {
         assertEquals(0f, barFraction(-5), 0.0001f)
     }
 
-    private fun card(p: String, climateOn: Boolean?, copText: String?) = CarStats(
+    private fun card(p: String, climate: ClimateLook?, copText: String?) = CarStats(
         prefix = p, name = p, color = "gray", percent = 50, percentText = "50%", awake = CarAwake.AWAKE,
         statusText = "", rangeText = "", odometerText = "", insideText = "", outsideText = "",
-        climateOn = climateOn, copText = copText, tires = emptyMap(),
+        climate = climate, copText = copText, tires = emptyMap(),
     )
 
     @Test fun firstControl_fanThenCopThenNextCar() {
-        assertEquals("a" to CarControl.FAN, teslaFirstControl(listOf(card("a", false, "On"), card("b", true, "On"))))
-        assertEquals("a" to CarControl.COP, teslaFirstControl(listOf(card("a", null, "Off"), card("b", true, null))))
-        assertEquals("b" to CarControl.FAN, teslaFirstControl(listOf(card("a", null, null), card("b", true, null))))
+        assertEquals("a" to CarControl.FAN, teslaFirstControl(listOf(card("a", ClimateLook.OFF, "On"), card("b", ClimateLook.ON, "On"))))
+        assertEquals("a" to CarControl.COP, teslaFirstControl(listOf(card("a", null, "Off"), card("b", ClimateLook.ON, null))))
+        assertEquals("b" to CarControl.FAN, teslaFirstControl(listOf(card("a", null, null), card("b", ClimateLook.UNKNOWN, null))))
         assertNull(teslaFirstControl(listOf(card("a", null, null))))
         assertNull(teslaFirstControl(emptyList()))
     }

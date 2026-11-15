@@ -15,10 +15,21 @@ private const val DASH = "—"
 data class Tire(val text: String, val low: Boolean)
 enum class CarAwake { AWAKE, ASLEEP, UNREACHABLE }
 
+/** What the car's fan button shows: on (`heat_cool`), off, or unknown (no / unknown / unavailable state). */
+enum class ClimateLook { ON, OFF, UNKNOWN }
+
+/** `heat_cool` = on; unknown, unavailable or missing = [ClimateLook.UNKNOWN] (never shown as off); else off. */
+fun climateLook(s: EntityState?): ClimateLook = when {
+    isUnavailable(s) -> ClimateLook.UNKNOWN
+    s!!.state == "heat_cool" -> ClimateLook.ON
+    else -> ClimateLook.OFF
+}
+
 data class CarStats(
     val prefix: String, val name: String, val color: String, val percent: Int?, val percentText: String,
     val awake: CarAwake, val statusText: String, val rangeText: String, val odometerText: String,
-    val insideText: String, val outsideText: String, val climateOn: Boolean?, val copText: String?,
+    val insideText: String, val outsideText: String, /** Null = the car has no climate entity (no fan button). */
+    val climate: ClimateLook?, val copText: String?,
     val tires: Map<String, Tire>,
 )
 
@@ -103,7 +114,7 @@ fun carStats(
         },
         insideText = temperature(states["sensor.${prefix}_inside_temperature"], "Inside"),
         outsideText = temperature(states["sensor.${prefix}_outside_temperature"], "Outside"),
-        climateOn = climateId?.let { states[it]?.state == "heat_cool" },
+        climate = climateId?.let { climateLook(states[it]) },
         copText = copId?.let { id -> states[id]?.let(::copLabel) ?: DASH },
         rangeText = withUnit(states["sensor.${prefix}_battery_range"], grouped = false),
         odometerText = withUnit(states["sensor.${prefix}_odometer"], grouped = true),

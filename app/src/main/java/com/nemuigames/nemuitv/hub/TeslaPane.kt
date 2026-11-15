@@ -76,7 +76,7 @@ enum class CarControl { FAN, COP }
 /** Where → from the Tesla rail item lands: the first car's fan, else its COP row, else the next car's; null = none. */
 fun teslaFirstControl(cards: List<CarStats>): Pair<String, CarControl>? = cards.firstNotNullOfOrNull { c ->
     when {
-        c.climateOn != null -> c.prefix to CarControl.FAN
+        c.climate != null -> c.prefix to CarControl.FAN
         c.copText != null -> c.prefix to CarControl.COP
         else -> null
     }
@@ -170,10 +170,10 @@ private fun CarCard(
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(c.insideText, fontSize = 13.sp, color = Jt.TextPrimary, maxLines = 1)
-            c.climateOn?.let { on ->
+            c.climate?.let { look ->
                 Spacer(Modifier.width(8.dp))
                 FanButton(
-                    on = on, pending = ctl.fanPending, blocked = ctl.blocked,
+                    look = look, pending = ctl.fanPending, blocked = ctl.blocked,
                     onOk = { if (!inert && !ctl.fanPending) onFan() }, onLeftEdge = onLeftEdge,
                     modifier = focusFor(CarControl.FAN),
                 )
@@ -183,7 +183,7 @@ private fun CarCard(
         }
         // Always takes its line, so the card doesn't jump when a press starts / ends.
         Text(
-            if (ctl.fanPending && c.climateOn != null) turningText(c.climateOn) else "",
+            if (ctl.fanPending && c.climate != null) turningText(wasOn = c.climate == ClimateLook.ON) else "",
             fontSize = 10.sp, color = Jt.TextSecondary, maxLines = 1,
         )
         c.copText?.let { cop ->
@@ -198,6 +198,8 @@ private fun CarCard(
 }
 
 private val IceBlue = Color(0xFF8FD8FF)
+/** How much an unknown-state fan is dimmed (outline + glyph). */
+private const val UNKNOWN_ALPHA = 0.45f
 private val FanShape = RoundedCornerShape(8.dp)
 private val CopShape = RoundedCornerShape(8.dp)
 /** Blocked (controls not connected): gray and see-through, but still focusable (and visibly so) so OK can explain why. */
@@ -228,16 +230,20 @@ private fun pendingPulse(pending: Boolean): Float = if (pending) {
     tr.animateFloat(0.35f, 0.75f, infiniteRepeatable(tween(600), RepeatMode.Reverse), label = "pulse").value
 } else 1f
 
-/** The fan [❄]: outline when off, filled ice-blue when on, dimmed and pulsing while pending, gray when blocked. */
+/**
+ * The fan [❄]: outline when off, filled ice-blue when on, a dimmed outline (no fill) when the state is unknown,
+ * dimmed and pulsing while pending, gray when blocked. Unknown still takes OK (it sends turn_on).
+ */
 @Composable
 private fun FanButton(
-    on: Boolean, pending: Boolean, blocked: Boolean,
+    look: ClimateLook, pending: Boolean, blocked: Boolean,
     onOk: () -> Unit, onLeftEdge: (() -> Unit)?, modifier: Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
     // Dimming goes into the colors, not a graphicsLayer on the Surface: a layer alpha there also hid the focus
     // outline and turned the focus glow into a gray square. The focus outline itself always stays full white.
-    val a = pendingPulse(pending) * blockedAlpha(blocked, focused)
+    val on = look == ClimateLook.ON
+    val a = pendingPulse(pending) * blockedAlpha(blocked, focused) * (if (look == ClimateLook.UNKNOWN) UNKNOWN_ALPHA else 1f)
     val fill = when {
         blocked -> Color.White.copy(alpha = if (focused) 0.35f else 0.12f)
         on -> IceBlue

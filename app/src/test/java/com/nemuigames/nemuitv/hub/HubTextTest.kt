@@ -1,6 +1,7 @@
 package com.nemuigames.nemuitv.hub
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class HubTextTest {
@@ -35,6 +36,12 @@ class HubTextTest {
         val items = stripItems(strip(temp = null, on = 0))
         assertEquals(listOf("🔒 Locked", "💡 0 on", "🏠 Alex, Sam"), items.map { it.text })
         assertEquals(false, items[1].warm)
+    }
+
+    @Test fun `asleep car chip shows 💤 and no ⚡ even when charging was reported`() {
+        val text = carText(CarChip("my_car", "My Car", 97, charging = true, color = "darkgray", asleep = true))
+        assertEquals("My Car 97% 💤", text)
+        assertFalse("⚡" in text)
     }
 
     @Test fun car_unknownPercent() = assertEquals("Second Car —", carText(CarChip("second_car", "Second Car", null, false, "white")))
