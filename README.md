@@ -3,7 +3,7 @@
 A calmer home screen for Google TV. Video wallpapers, a favorites row, a Control Center, and a screensaver with a big clock.
 Optional extras: Home Assistant (lights, cameras, doorbell, Tesla) and a Spotify heart button.
 
-![NemuiTV home screen](docs/images/home.png)
+![NemuiTV home screen](docs/images/home.jpg)
 
 NemuiTV is free and open source. It is offered as-is: there is no support promise, and it is not on the Play Store.
 You install it from your computer over Wi-Fi.
@@ -17,9 +17,11 @@ You install it from your computer over Wi-Fi.
 - Optional: Home Assistant rooms, scenes, cameras, doorbell pop-up, appliance alerts and Tesla. See [docs/home-assistant.md](docs/home-assistant.md).
 - Optional: a Spotify heart button to like the playing song. See [docs/spotify.md](docs/spotify.md).
 
-| Tray | Control Center | Setup page |
-|---|---|---|
-| ![Tray](docs/images/tray.png) | ![Control Center](docs/images/control-center.png) | ![Setup page](docs/images/setup.png) |
+| Tray | Control Center |
+|---|---|
+| ![Tray](docs/images/tray.jpg) | ![Control Center](docs/images/control-center.jpg) |
+| **Home Assistant** | **Setup page** |
+| ![Home Assistant hub with a Tesla](docs/images/hub.jpg) | ![Setup page](docs/images/setup.png) |
 
 ## Supported devices
 
