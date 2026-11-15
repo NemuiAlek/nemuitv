@@ -161,6 +161,9 @@ class HubState(
         openJob = null
         commands.toList().forEach { it.timer?.cancel() }
         commands.clear()
+        // The blocks themselves stay (the next live connection clears them); only their timers stop with the hub.
+        blockTimers.values.forEach { it.cancel() }
+        blockTimers.clear()
         _ui.update { it.copy(loading = false, pending = emptySet(), live = false) }
     }
 

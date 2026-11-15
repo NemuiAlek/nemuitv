@@ -691,6 +691,20 @@ class HubStateTest {
         assertEquals(1, port.calls.size) // cleared by the timer, not by a press
     }
 
+    @Test fun `noKeyBlock close stopsItsTimer`() = runTest {
+        val hub = openedWithCars()
+        port.callResult = HaResult.Error(com.nemuigames.nemuitv.ha.HaError("home_assistant_error", NO_KEY))
+        hub.toggleCarClimate("my_car")
+        runCurrent()
+        hub.close()
+        runCurrent()
+        val afterClose = hub.ui.value
+        advanceTimeBy(CAR_BLOCK_MS + 1); runCurrent()
+        // The timer died with close(): nothing touches the closed hub's state.
+        assertEquals(setOf("my_car"), hub.ui.value.blockedCars)
+        assertEquals(afterClose.blockedCars, hub.ui.value.blockedCars)
+    }
+
     @Test fun `carControls whilePending ignored`() = runTest {
         val hub = openedWithCars()
         hub.toggleCarClimate("my_car")

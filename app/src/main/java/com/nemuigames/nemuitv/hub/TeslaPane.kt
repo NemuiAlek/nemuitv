@@ -114,11 +114,13 @@ fun TeslaPane(
         Modifier.fillMaxSize().graphicsLayer { alpha = if (inert) 0.45f else 1f },
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // ◀ goes to the rail from the leftmost card that has controls (the one → lands on), not only card 0.
+        val leftIndex = first?.let { f -> cards.indexOfFirst { it.prefix == f.first } } ?: -1
         cards.forEachIndexed { i, c ->
             CarCard(
                 c, controls(c.prefix), inert,
                 onFan = { onFan(c.prefix) }, onCop = { onCop(c.prefix) },
-                onLeftEdge = if (i == 0) onLeft else null,
+                onLeftEdge = if (i == leftIndex) onLeft else null,
                 firstFocus = firstFocus.takeIf { first?.first == c.prefix }, firstControl = first?.second,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )

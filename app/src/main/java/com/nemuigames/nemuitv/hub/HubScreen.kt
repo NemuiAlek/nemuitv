@@ -133,6 +133,7 @@ fun HubScreen(core: NemuiCore, onExit: () -> Unit) {
     var selected by remember { mutableStateOf(OVERVIEW) }
     var sheet by remember { mutableStateOf<HubSheet?>(null) }
     var paneHasFocus by remember { mutableStateOf(false) }
+    var railHasFocus by remember { mutableStateOf(false) }
     val railFocus = remember { HashMap<String, FocusRequester>() }
     fun railReq(key: String) = railFocus.getOrPut(key) { FocusRequester() }
     val tileFocus = remember { HashMap<String, FocusRequester>() }
@@ -241,6 +242,15 @@ fun HubScreen(core: NemuiCore, onExit: () -> Unit) {
         }
     }
 
+    // A focused Tesla control can vanish (its entity went away): focus would be orphaned and Back would leave the hub.
+    // After a frame with focus in neither the pane nor the rail, put it back on the rail.
+    LaunchedEffect(paneHasFocus, railHasFocus) {
+        if (!paneHasFocus && !railHasFocus && selected == TESLA && sheet == null) {
+            withFrameNanos { }
+            if (!paneHasFocus && !railHasFocus && selected == TESLA && sheet == null) focusRail()
+        }
+    }
+
     BackHandler {
         when {
             sheet != null -> closeSheet(save = true)
@@ -264,7 +274,7 @@ fun HubScreen(core: NemuiCore, onExit: () -> Unit) {
                     lastKey = railKeys.last(), inert = inert,
                     onFocused = { selected = it },
                     onEnter = { enterPane() },
-                    modifier = Modifier.width(RailWidth),
+                    modifier = Modifier.width(RailWidth).onFocusChanged { railHasFocus = it.hasFocus },
                 )
                 Spacer(Modifier.width(RailGap))
                 Column(Modifier.weight(1f)) {
