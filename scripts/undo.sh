@@ -7,7 +7,7 @@ for a in "$@"; do case "$a" in -h|--help) sed -n '2,5p' "$0" | sed 's/^# \{0,1\}
 source "$(dirname "$0")/_common.sh" "$@"
 require_device
 # A failing command under set -e is almost always adb losing the TV mid-run: say so instead of exiting silently.
-trap 'printf "\nStopped: lost contact with the TV. Reconnect Wireless debugging and run this again.\n" >&2' ERR
+trap 'printf "\nStopped: lost contact with the TV. Reconnect (Wireless debugging or ADB debugging) and run this again.\n" >&2' ERR
 SVC="$PKG/$PKG.takeover.HomeTakeoverService"
 SVC_SHORT="$PKG/.takeover.HomeTakeoverService"
 LISTENER="$PKG/$PKG.nowplaying.NowPlayingListener"

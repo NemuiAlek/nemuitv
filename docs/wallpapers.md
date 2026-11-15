@@ -62,7 +62,7 @@ Read the license on any clip you use. Slow nature scenes, clouds, water and abst
 
 ## Send them to the TV
 
-Your TV needs to be connected with `adb` (the setup script did that; if the connection dropped, turn on Wireless debugging and run `adb connect <ip-address:port>`).
+Your TV needs to be connected with `adb` (the setup script did that; if the connection dropped, turn on Wireless debugging and run `adb connect <ip-address:port>`, or with ADB debugging run `adb connect <TV IP>:5555`).
 
 Mac or Linux:
 

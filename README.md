@@ -27,6 +27,7 @@ You install it from your computer over Wi-Fi.
 
 - **Google TV Streamer:** the tested, official target.
 - **Chromecast with Google TV:** should work, with caveats. It is slower, and its wallpapers must be smaller (see [docs/wallpapers.md](docs/wallpapers.md)).
+- **TVs with Google TV built in (for example Sony BRAVIA):** setup supports them through ADB debugging. Being tested; please open an issue if it doesn't work on yours.
 - Other Android TV or Google TV boxes: untested.
 
 You need a Mac, Windows or Linux computer on the same Wi-Fi network as the TV.
@@ -40,9 +41,10 @@ NemuiTV never turns off Google's home screen. It takes over the remote's Home bu
 2. Open a terminal in the unzipped folder.
    - Mac or Linux: `bash scripts/setup.sh`
    - Windows (PowerShell): `powershell -ExecutionPolicy Bypass -File scripts\setup.ps1`
-3. Follow the prompts. The script finds or downloads Google's `adb` tool (it asks first), helps you pair with the TV over Wireless debugging, installs the app, and grants it two permissions.
+3. Follow the prompts. The script finds or downloads Google's `adb` tool (it asks first), asks which debugging option your TV has and connects to it, installs the app, and grants it two permissions.
+   - Setup asks which option your TV's Developer options has: "Wireless debugging" (Google TV Streamer, Chromecast with Google TV), which uses a pairing code, or "ADB debugging" / "Network debugging" (TVs with Google TV built in), which only needs the TV's IP address.
 4. The script then turns on the Home-button takeover and Now Playing, and opens NemuiTV on the TV.
-5. On the TV, open the Setup page (hold Home, then Launcher settings, then Setup). The first three rows should say Done or On. Turn Screensaver on here if you want NemuiTV as your screensaver. You can turn Wireless debugging off now.
+5. On the TV, open the Setup page (hold Home, then Launcher settings, then Setup). The first three rows should say Done or On. Turn Screensaver on here if you want NemuiTV as your screensaver. You can turn Wireless debugging or ADB debugging off now.
 
 Optional: check the download first. `NemuiTV-1.0.0.apk.sha256` on the release page holds the expected hash. On Mac, `shasum -a 256 NemuiTV-1.0.0.apk` should print the same value.
 

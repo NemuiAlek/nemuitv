@@ -100,7 +100,7 @@ require_device() {
     fi
   fi
   "${ADB[@]}" get-state >/dev/null 2>&1 || {
-    echo "Can't reach the device${SERIAL:+ ($SERIAL)}. Check 'adb devices' / reconnect wireless debugging." >&2; exit 1; }
+    echo "Can't reach the device${SERIAL:+ ($SERIAL)}. Check 'adb devices' / reconnect (Wireless debugging or ADB debugging)." >&2; exit 1; }
 }
 
 has_pkg() { local o; o=$("${ADB[@]}" shell pm list packages "$1" </dev/null | tr -d '\r' || true); grep -qx "package:$1" <<<"$o"; }

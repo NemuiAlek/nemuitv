@@ -18,6 +18,8 @@ adb version
 
 ## 2. Connect to the TV
 
+Which option does Developer options have? "Wireless debugging" (Google TV Streamer, Chromecast with Google TV): follow the steps below. "ADB debugging" or "Network debugging" (TVs with Google TV built in): skip to "If your TV has ADB debugging instead".
+
 1. On the TV: Settings, System, About. Press OK on "Android TV OS build" 7 times. Developer options are now on.
 2. Settings, System, Developer options: turn on "Wireless debugging".
 3. Choose "Pair device with pairing code". The TV shows an address (like `192.0.2.10:37123`) and a 6-digit code.
@@ -41,6 +43,20 @@ adb devices
 ```
 
 You should see your TV with the state `device`. If you have more than one device, add `-s <ip-address:port>` right after `adb` in every command below.
+
+### If your TV has ADB debugging instead of Wireless debugging
+
+1. Do step 1 above, then in Developer options turn on "ADB debugging" (some TVs call it "Network debugging").
+2. Find the TV's IP address: Settings, Network & Internet, then your network.
+3. Connect to port 5555:
+
+```
+adb connect <TV IP>:5555
+```
+
+4. On the TV, accept the prompt and choose "Always allow from this computer". Run `adb devices` to check, then continue with step 3 below.
+
+If it won't connect: turn "ADB debugging" off and on, make sure the TV is on Wi-Fi (not Ethernet) on the same network as your computer, and if your TV has "Wireless debugging", use that instead.
 
 ## 3. Install
 
@@ -115,7 +131,7 @@ adb shell settings get secure enabled_notification_listeners
 adb shell am start -n com.nemuigames.nemuitv/.HomeActivity
 ```
 
-You can turn Wireless debugging off now. The Setup page on the TV (hold Home, Launcher settings, Setup) shows what is on. Its Home button and Screensaver rows are switches you can change there. The Now Playing row only shows its status, because Android doesn't let an app turn its own listener on. Step 6 above is what turns it on.
+You can turn Wireless debugging or ADB debugging off now. The Setup page on the TV (hold Home, Launcher settings, Setup) shows what is on. Its Home button and Screensaver rows are switches you can change there. The Now Playing row only shows its status, because Android doesn't let an app turn its own listener on. Step 6 above is what turns it on.
 
 ## Undo by hand
 
