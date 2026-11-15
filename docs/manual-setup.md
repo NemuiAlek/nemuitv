@@ -63,7 +63,7 @@ If it won't connect: turn "ADB debugging" off and on, make sure the TV is on Wi-
 Installs (or updates) the app. `-r` keeps its data when updating:
 
 ```
-adb install -r NemuiTV-1.0.1.apk
+adb install -r NemuiTV-1.0.2.apk
 ```
 
 ## 4. Grant permissions

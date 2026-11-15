@@ -91,6 +91,22 @@ wait_authorized() {
   return 1
 }
 
+# takeover_running SECONDS: poll every 0.5 s (WAIT_STEP_S overrides) until Android runs NemuiTV's Home-button service.
+# Checks the service by its class name in `dumpsys activity services`, not the label in `dumpsys accessibility`
+# (TV makers show different labels: Sony BRAVIA lists it as "Home"). 0 = running, 1 = not within SECONDS.
+takeover_running() {
+  local max=$(( ${1:-5} * 2 )) i out
+  for ((i=0; i<max; i++)); do
+    out=$("${ADB[@]}" shell dumpsys activity services "$PKG" 2>/dev/null </dev/null | tr -d '\r' || true)
+    # Running = an active "* ServiceRecord{… HomeTakeoverService}" block with its own "app=ProcessRecord" line
+    # (old DEAD ConnectionRecords also name the service, and other services have their own app= lines).
+    if awk '/^ *\* ServiceRecord\{/ { inb = ($0 ~ /\.takeover\.HomeTakeoverService\}/) } /^ *[A-Z][A-Za-z ]*:$/ { inb = 0 }
+            inb && /app=ProcessRecord/ { f = 1 } END { exit !f }' <<<"$out"; then return 0; fi
+    sleep "${WAIT_STEP_S:-0.5}"
+  done
+  return 1
+}
+
 # Stop early (before touching anything) if the device isn't reachable.
 require_device() {
   local rc=0

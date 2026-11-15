@@ -184,14 +184,7 @@ elif [[ ":$cur:" == *":$SVC_SHORT:"* ]]; then new="$cur"
 else new="$cur:$TV_SVC"; fi   # keep any other accessibility services that are already on
 run settings put secure enabled_accessibility_services "$new"
 run settings put secure accessibility_enabled 1
-bound=0
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  dump=$("${ADB[@]}" shell dumpsys accessibility </dev/null | tr -d '\r' || true)
-  # here-string, not a pipe: grep -q exits early and a pipe would make printf fail (SIGPIPE) on long output
-  if grep -q "Bound services:.*NemuiTV Home button" <<<"$dump"; then bound=1; break; fi
-  sleep 0.5
-done
-[[ $bound -eq 1 ]] || fail "the Home-button setting was written, but the service isn't running yet.
+takeover_running 10 || fail "the Home-button setting was written, but the service isn't running yet.
 Try again in a moment, or look at: adb logcat -d -s NemuiTV"
 say "Home button: NemuiTV opens when you press Home on the remote. Google's home screen stays installed."
 

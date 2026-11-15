@@ -129,6 +129,24 @@ function Connect-AdbDebug {
 }
 # Wait-Authorized SECONDS: poll get-state every 2 s (env WAIT_STEP_S overrides the pause, for tests).
 # $true = "device"; $false = timed out (last state in $global:LastState). Prints the Allow hint once, the first time it sees "unauthorized".
+# Test-TakeoverRunning: poll every 0.5 s (env WAIT_STEP_S overrides) until Android runs NemuiTV's Home-button service.
+# Checks the service by its class name in `dumpsys activity services`, not the label in `dumpsys accessibility`
+# (TV makers show different labels: Sony BRAVIA lists it as "Home").
+function Test-TakeoverRunning {
+    param([int]$Seconds = 5)
+    $max = $Seconds * 2
+    $stepS = 0.5
+    if ($env:WAIT_STEP_S) { $stepS = [double]$env:WAIT_STEP_S }
+    for ($i = 0; $i -lt $max; $i++) {
+        $out = Invoke-Adb @('shell', 'dumpsys', 'activity', 'services', $Pkg) -NoLost
+        # Running = an active "* ServiceRecord{... HomeTakeoverService}" block with its own "app=ProcessRecord" line
+        # (old DEAD ConnectionRecords also name the service, and other services have their own app= lines).
+        if ($out -match '(?s)\* ServiceRecord\{[^}]*\.takeover\.HomeTakeoverService\}(?:(?!\* ServiceRecord|\n {2}[A-Z][A-Za-z ]*:\r?\n).)*?app=ProcessRecord') { return $true }
+        Start-Sleep -Milliseconds ([int]($stepS * 1000))
+    }
+    return $false
+}
+
 function Wait-Authorized {
     param([int]$Seconds = 60)
     $max = [int][math]::Floor($Seconds / 2)

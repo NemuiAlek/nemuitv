@@ -209,13 +209,7 @@ elseif (":${cur}:".Contains(":${SvcShort}:")) { $new = $cur }
 else { $new = "${cur}:${TvSvc}" }   # keep any other accessibility services that are already on
 Invoke-Run @('settings', 'put', 'secure', 'enabled_accessibility_services', $new)
 Invoke-Run @('settings', 'put', 'secure', 'accessibility_enabled', '1')
-$bound = $false
-for ($i = 0; $i -lt 10; $i++) {
-    $dump = Invoke-Adb @('shell', 'dumpsys', 'accessibility')
-    if ($dump -match 'Bound services:.*NemuiTV Home button') { $bound = $true; break }
-    Start-Sleep -Milliseconds 500
-}
-if (-not $bound) { Fail "the Home-button setting was written, but the service isn't running yet.`nTry again in a moment, or look at: adb logcat -d -s NemuiTV" }
+if (-not (Test-TakeoverRunning 10)) { Fail "the Home-button setting was written, but the service isn't running yet.`nTry again in a moment, or look at: adb logcat -d -s NemuiTV" }
 Say "Home button: NemuiTV opens when you press Home on the remote. Google's home screen stays installed."
 
 [void](Invoke-Adb @('shell', 'cmd', 'notification', 'allow_listener', $Listener))
