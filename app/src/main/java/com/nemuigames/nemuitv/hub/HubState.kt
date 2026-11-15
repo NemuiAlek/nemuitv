@@ -22,6 +22,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlin.math.abs
 
 data class TileUi(
@@ -68,12 +69,15 @@ fun subscribedIds(model: HubModel): List<String> = buildList {
 private fun JsonObject.str(key: String): String? =
     (this[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.contentOrNull
 
+private fun JsonObject.epochMs(key: String): Long? =
+    (this[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.doubleOrNull?.let { (it * 1000).toLong() }
+
 /** Applies one compact `subscribe_entities` event ("a" full, "c" diff, "r" removed) to [states]. */
 fun applyEntityEvent(states: Map<String, EntityState>, event: JsonObject): Map<String, EntityState> {
     val out = states.toMutableMap()
     (event["a"] as? JsonObject)?.forEach { (id, v) ->
         val o = v as? JsonObject ?: return@forEach
-        out[id] = EntityState(o.str("s") ?: "unknown", o["a"] as? JsonObject ?: JsonObject(emptyMap()))
+        out[id] = EntityState(o.str("s") ?: "unknown", o["a"] as? JsonObject ?: JsonObject(emptyMap()), o.epochMs("lc"))
     }
     (event["c"] as? JsonObject)?.forEach { (id, v) ->
         val o = v as? JsonObject ?: return@forEach
@@ -84,7 +88,7 @@ fun applyEntityEvent(states: Map<String, EntityState>, event: JsonObject): Map<S
         val attrs = LinkedHashMap<String, JsonElement>(old.attributes)
         (plus?.get("a") as? JsonObject)?.let { attrs.putAll(it) }
         minus.forEach { attrs.remove(it) }
-        out[id] = EntityState(plus?.str("s") ?: old.state, JsonObject(attrs))
+        out[id] = EntityState(plus?.str("s") ?: old.state, JsonObject(attrs), plus?.epochMs("lc") ?: old.lastChangedMs)
     }
     (event["r"] as? JsonArray)?.forEach { e -> (e as? JsonPrimitive)?.contentOrNull?.let { out.remove(it) } }
     return out

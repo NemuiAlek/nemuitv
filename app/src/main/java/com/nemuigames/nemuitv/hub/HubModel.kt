@@ -11,7 +11,8 @@ data class EntityEntry(
 )
 data class LabelEntry(val id: String, val name: String)
 data class Registries(val areas: List<AreaEntry>, val devices: List<DeviceEntry>, val entities: List<EntityEntry>, val labels: List<LabelEntry>)
-data class EntityState(val state: String, val attributes: JsonObject)
+/** [lastChangedMs] is HA's `last_changed` (epoch ms) when the event carried it, else null. */
+data class EntityState(val state: String, val attributes: JsonObject, val lastChangedMs: Long? = null)
 data class Tile(val entityId: String, val name: String, val domain: String, val keepOn: Boolean)
 data class Room(val areaId: String, val name: String, val tiles: List<Tile>)
 data class HubModel(
