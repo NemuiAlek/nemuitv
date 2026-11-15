@@ -151,4 +151,19 @@ class TeslaTextTest {
         val cards = teslaCards(model, full("second_car") + full("my_car"), cfg, NOW, NY)
         assertEquals(listOf("my_car", "second_car"), cards.map { it.prefix })
     }
+
+    @Test fun `cards useModelClimateAndCopIds`() {
+        val m = model.copy(
+            carClimate = mapOf("my_car" to "climate.my_car_climate"),
+            carCop = mapOf("my_car" to "climate.my_car_cabin_overheat_protection"),
+        )
+        val states = full("second_car") + full("my_car") + mapOf(
+            "climate.my_car_climate" to st("heat_cool"), "climate.my_car_cabin_overheat_protection" to st("fan_only"),
+        )
+        val (mine, second) = teslaCards(m, states, cfg, NOW, NY)
+        assertEquals(true, mine.climateOn)
+        assertEquals("No A/C", mine.copText)
+        assertNull(second.climateOn)
+        assertNull(second.copText)
+    }
 }

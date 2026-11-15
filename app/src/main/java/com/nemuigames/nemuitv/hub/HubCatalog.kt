@@ -99,6 +99,12 @@ fun buildHubModel(reg: Registries, cfg: HubConfig): HubModel {
         }?.entityId?.removePrefix("sensor.")?.removeSuffix("_battery_level")
     }
 
+    // Car controls: matched by id (not device), so an enabled entity with the expected id is enough.
+    val enabledIds = reg.entities.filter { it.disabledBy == null }.map { it.entityId }.toSet()
+    fun carEntity(suffix: String) = cars.mapNotNull { p -> "climate.${p}_$suffix".takeIf { it in enabledIds }?.let { p to it } }.toMap()
+    val carClimate = carEntity("climate")
+    val carCop = carEntity("cabin_overheat_protection")
+
     // A scene script.<x> is flagged by input_boolean.<x> when that entity exists and is usable (area not needed).
     val usableBooleans = reg.entities.filter { usable(it) && domainOf(it.entityId) == "input_boolean" }
         .map { it.entityId }.toSet()
@@ -119,5 +125,6 @@ fun buildHubModel(reg: Registries, cfg: HubConfig): HubModel {
 
     return HubModel(
         rooms, scenes, cameras, thermostat, houseLocks.map { it.entityId }, lockBatteries, people, cars, sceneFlags, cycles,
+        carClimate, carCop,
     )
 }

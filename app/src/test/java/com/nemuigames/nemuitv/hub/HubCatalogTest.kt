@@ -247,6 +247,28 @@ class HubCatalogTest {
         assertEquals(listOf("my_car", "second_car"), m.cars)
     }
 
+    @Test fun `carControls climatePresent copDisabledAbsent`() {
+        val m = buildHubModel(
+            reg.copy(entities = entities + listOf(
+                e("climate.my_car_climate", device = "d_car1"),
+                e("climate.my_car_cabin_overheat_protection", device = "d_car1", disabled = "integration"),
+                e("climate.second_car_cabin_overheat_protection", device = "d_car2"),
+            )),
+            hubCfg,
+        )
+        assertEquals(mapOf("my_car" to "climate.my_car_climate", "second_car" to "climate.second_car_climate"), m.carClimate)
+        assertEquals(mapOf("second_car" to "climate.second_car_cabin_overheat_protection"), m.carCop)
+    }
+
+    @Test fun `carControls absentWhenNoEntity`() {
+        assertEquals(mapOf("second_car" to "climate.second_car_climate"), model.carClimate)
+        assertTrue(model.carCop.isEmpty())
+    }
+
+    @Test fun `carControls climateNotTheHouseThermostat`() {
+        assertEquals("climate.house", model.thermostat)
+    }
+
     private fun st(s: String) = EntityState(s, JsonObject(emptyMap()))
     private val room = Room("r", "R", listOf(
         Tile("light.a", "A", "light", false), Tile("light.k", "K", "light", true),

@@ -1,6 +1,7 @@
 package com.nemuigames.nemuitv.hub
 
 import com.nemuigames.nemuitv.config.HubConfig
+import com.nemuigames.nemuitv.ha.HaError
 import com.nemuigames.nemuitv.ha.HaPort
 import com.nemuigames.nemuitv.ha.HaResult
 import com.nemuigames.nemuitv.ha.HaStatus
@@ -42,6 +43,12 @@ data class HubUi(
      * are refused, like offline but without the offline banner.
      */
     val live: Boolean = false,
+    /**
+     * Car prefixes whose controls aren't connected (Tesla rejected the key). While blocked the car's climate and
+     * overheat buttons send nothing and show [carNotConnectedMessage]. Clears on a new live connection or after
+     * [CAR_BLOCK_MS].
+     */
+    val blockedCars: Set<String> = emptySet(),
 )
 
 const val CONFIRM_WINDOW_MS = 3_000L
@@ -63,6 +70,10 @@ fun subscribedIds(model: HubModel): List<String> = buildList {
         add("sensor.${p}_battery_level"); add("sensor.${p}_charging")
         add("sensor.${p}_battery_range"); add("sensor.${p}_odometer")
         TIRE_POSITIONS.forEach { pos -> add("sensor.${p}_tire_pressure_$pos") }
+        add("binary_sensor.${p}_status")
+        add("sensor.${p}_inside_temperature"); add("sensor.${p}_outside_temperature")
+        model.carClimate[p]?.let { add(it) }
+        model.carCop[p]?.let { add(it) }
     }
 }.distinct()
 
@@ -109,6 +120,7 @@ class HubState(
     private val port: HaPort,
     private val cfg: () -> HubConfig,
     private val scope: CoroutineScope,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private class Command(val ids: MutableSet<String>, val failName: String, val expected: (EntityState?) -> Boolean) {
         var timer: Job? = null
@@ -122,6 +134,8 @@ class HubState(
     private var openJob: Job? = null
     private var messageJob: Job? = null
     private val commands = mutableListOf<Command>()
+    /** Car prefix -> when its controls block was set (memory only). */
+    private val blockedAtMs = mutableMapOf<String, Long>()
 
     fun open() {
         if (openJob != null) return
@@ -183,6 +197,9 @@ class HubState(
 
     private fun onEvent(event: JsonObject, replace: Boolean) {
         val gone = removedIds(event)
+        val becameLive = !_ui.value.live && replace && port.status.value == HaStatus.CONNECTED
+        // A new live connection is one real retry for every car: its key may have been paired meanwhile.
+        if (becameLive) blockedAtMs.clear()
         _ui.update { u ->
             val states = applyEntityEvent(if (replace) emptyMap() else u.states, event)
             val model = u.model?.let { m ->
@@ -191,7 +208,8 @@ class HubState(
             }
             u.copy(
                 loading = false, model = model, states = states, strip = model?.let { buildStrip(it, states, cfg()) },
-                live = u.live || (replace && port.status.value == HaStatus.CONNECTED),
+                live = u.live || becameLive,
+                blockedCars = if (becameLive) emptySet() else u.blockedCars,
             )
         }
         checkCommands()
@@ -265,6 +283,8 @@ class HubState(
         ids: List<String>, failName: String, expected: (EntityState?) -> Boolean,
         domain: String, service: String, data: JsonObject, target: JsonObject,
         windowMs: Long = CONFIRM_WINDOW_MS, confirmOnResult: Boolean = false, failVerb: String = "reach",
+        /** Gets HA's error first; true = handled (it showed its own message), so no "Couldn't …". */
+        onError: (HaError) -> Boolean = { false },
     ) {
         val c = Command(ids.toMutableSet(), failName, expected)
         commands += c
@@ -280,6 +300,8 @@ class HubState(
             if (r is HaResult.Ok) {
                 // Scripts give no reliable state change: HA's success reply is their confirmation.
                 if (confirmOnResult) finish(c, null)
+            } else if (r is HaResult.Error && onError(r.error)) {
+                finish(c, null)
             } else {
                 finish(c, if (r is HaResult.NotConnected) OFFLINE_MESSAGE else "Couldn't $failVerb $failName")
             }
@@ -366,6 +388,57 @@ class HubState(
         send(
             listOf(entityId), "Thermostat", { climateConfirmed(end, it) },
             "climate", call.service, call.data, entityTarget(entityId),
+        )
+    }
+
+    /** True (and shows why) while [prefix]'s controls are blocked; an expired block is dropped here, at press time. */
+    private fun carBlocked(prefix: String): Boolean {
+        val at = blockedAtMs[prefix] ?: return false
+        if (clock() - at >= CAR_BLOCK_MS) {
+            blockedAtMs.remove(prefix)
+            _ui.update { it.copy(blockedCars = it.blockedCars - prefix) }
+            return false
+        }
+        showMessage(carNotConnectedMessage(prefix))
+        return true
+    }
+
+    private fun blockOnNoKey(prefix: String): (HaError) -> Boolean = { e ->
+        isNoKeyError(e).also { noKey ->
+            if (noKey) {
+                blockedAtMs[prefix] = clock()
+                _ui.update { it.copy(blockedCars = it.blockedCars + prefix) }
+                showMessage(carNotConnectedMessage(prefix))
+            }
+        }
+    }
+
+    /** Car climate on/off: `heat_cool` goes off, anything else goes on. */
+    fun toggleCarClimate(prefix: String) {
+        val id = _ui.value.model?.carClimate?.get(prefix) ?: return
+        if (rejectOffline()) return
+        if (id in _ui.value.pending) return
+        if (carBlocked(prefix)) return
+        val wasOn = _ui.value.states[id]?.state == "heat_cool"
+        val want = if (wasOn) "off" else "heat_cool"
+        send(
+            listOf(id), "${carDisplayName(prefix)}'s climate", { it?.state == want },
+            "climate", if (wasOn) "turn_off" else "turn_on", JsonObject(emptyMap()), entityTarget(id),
+            windowMs = CAR_CONFIRM_MS, onError = blockOnNoKey(prefix),
+        )
+    }
+
+    /** Cabin overheat protection: steps to [nextCopMode]. */
+    fun toggleCop(prefix: String) {
+        val id = _ui.value.model?.carCop?.get(prefix) ?: return
+        if (rejectOffline()) return
+        if (id in _ui.value.pending) return
+        if (carBlocked(prefix)) return
+        val mode = nextCopMode(_ui.value.states[id]?.state)
+        send(
+            listOf(id), "${carDisplayName(prefix)}'s overheat protection", { it?.state == mode },
+            "climate", "set_hvac_mode", JsonObject(mapOf("hvac_mode" to JsonPrimitive(mode))), entityTarget(id),
+            windowMs = CAR_CONFIRM_MS, onError = blockOnNoKey(prefix),
         )
     }
 }

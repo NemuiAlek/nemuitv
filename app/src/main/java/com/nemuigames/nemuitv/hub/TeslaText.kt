@@ -112,4 +112,4 @@ fun carStats(
 }
 
 fun teslaCards(model: HubModel, states: Map<String, EntityState>, cfg: HubConfig, nowMs: Long, zone: ZoneId): List<CarStats> =
-    orderedCars(model.cars, cfg).map { carStats(it, states, cfg, nowMs, zone, null, null) }
+    orderedCars(model.cars, cfg).map { carStats(it, states, cfg, nowMs, zone, model.carClimate[it], model.carCop[it]) }
