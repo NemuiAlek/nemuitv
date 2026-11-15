@@ -1,6 +1,7 @@
 package com.nemuigames.nemuitv.favorites
 
 import org.junit.Assert.assertEquals
+import androidx.datastore.preferences.core.mutablePreferencesOf
 import org.junit.Test
 
 class AppOrderTest {
@@ -162,7 +163,7 @@ class AppOrderTest {
     }
 
     @Test fun `reconcile keepsMovedHome`() {
-        val l = AppLayout(listOf("a", H, "b"), emptySet())
+        val l = AppLayout(listOf("a", H, "b"), emptySet(), dockSix = true)
         assertEquals(l, AppOrder.reconcile(l, listOf("a", "b")))
     }
 
@@ -236,7 +237,7 @@ class AppOrderTest {
     @Test fun migrate_userPlacedHome_untouched() {
         val apps = letters(7)
         val l = AppLayout(apps.take(5) + H + apps.drop(5), emptySet(), homePending = false)
-        assertEquals(l, AppOrder.reconcile(l, apps))
+        assertEquals(l.copy(dockSix = true), AppOrder.reconcile(l, apps))
     }
 
     @Test fun fewerThanSix_allShown() {
@@ -303,5 +304,47 @@ class AppOrderTest {
     @Test fun `reconcile and upgrade neverSetFlag`() {
         assertEquals(false, AppOrder.reconcile(AppLayout(listOf("a", "b"), emptySet()), listOf("a", "b", "c")).homePending)
         assertEquals(false, AppOrder.upgrade(listOf("a"), listOf("a", "b")).homePending)
+    }
+
+    @Test fun `migration runsOnce userMoveToIndexFiveNotUndone`() {
+        val apps = letters(7)
+        val old = AppLayout(apps.take(5) + H + apps.drop(5), emptySet(), homePending = true) // pre-1.1.0 save: dockSix false
+        val m = AppOrder.reconcile(old, apps)
+        assertEquals(true, m.dockSix)
+        assertEquals(apps.take(6) + H + apps.drop(6), m.order)
+        // user moves the 6th app one step right: ⌂ lands at visible index 5, and stays there
+        val all = apps.toSet()
+        val moved = AppOrder.move(m, all, "f", 1)
+        assertEquals(5, AppOrder.visible(moved, all).indexOf(H))
+        assertEquals(moved, AppOrder.reconcile(moved, apps))
+    }
+
+    @Test fun `migration setsFlagEvenWhenNothingMoves`() {
+        val l = AppLayout(listOf("a", "b", H), emptySet(), homePending = false)
+        val r = AppOrder.reconcile(l, listOf("a", "b"))
+        assertEquals(l.order, r.order)
+        assertEquals(true, r.dockSix)
+    }
+
+    @Test fun `reconcile unchanged returnsSameInstance`() {
+        val l = AppLayout(listOf("a", H), emptySet(), dockSix = true)
+        assert(AppOrder.reconcile(l, listOf("a")) === l)
+    }
+
+    @Test fun `defaults and upgrade setDockSix`() {
+        assertEquals(true, AppOrder.defaults(letters(3), false).dockSix)
+        assertEquals(true, AppOrder.defaults(letters(3), true).dockSix)
+        assertEquals(true, AppOrder.upgrade(listOf("a"), letters(3)).dockSix)
+    }
+
+    @Test fun `store roundTripsDockSix andOldJsonReadsFalse`() {
+        val prefs = mutablePreferencesOf()
+        prefs.writeLayout(AppLayout(listOf("a", H), setOf("x"), homePending = true, dockSix = true))
+        assertEquals(AppLayout(listOf("a", H), setOf("x"), homePending = true, dockSix = true), prefs.toStoredLayout().layout)
+        val old = mutablePreferencesOf(
+            androidx.datastore.preferences.core.stringPreferencesKey("order") to "a,$H",
+            androidx.datastore.preferences.core.stringPreferencesKey("hidden") to "",
+        )
+        assertEquals(false, old.toStoredLayout().layout!!.dockSix)
     }
 }

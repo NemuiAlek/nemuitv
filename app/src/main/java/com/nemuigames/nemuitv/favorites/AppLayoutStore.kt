@@ -2,6 +2,8 @@ package com.nemuigames.nemuitv.favorites
 
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -16,29 +18,34 @@ private val Context.favoritesDataStore by preferencesDataStore(name = "favorites
  */
 data class StoredLayout(val layout: AppLayout?, val legacyFavorites: List<String>?)
 
+private val orderKey = stringPreferencesKey("order")
+private val hiddenKey = stringPreferencesKey("hidden")
+private val homePendingKey = booleanPreferencesKey("home_pending") // see AppLayout.homePending; absent = false
+private val dockSixKey = booleanPreferencesKey("dock_six")         // see AppLayout.dockSix; absent (old save) = false
+private val legacyKey = stringPreferencesKey("favorites")
+
+private fun String.toList() = split(',').filter(String::isNotBlank)
+
+internal fun Preferences.toStoredLayout() = StoredLayout(
+    layout = this[orderKey]?.toList()?.let {
+        AppLayout(it, this[hiddenKey]?.toList().orEmpty().toSet(), this[homePendingKey] == true, this[dockSixKey] == true)
+    },
+    legacyFavorites = this[legacyKey]?.toList(),
+)
+
+internal fun MutablePreferences.writeLayout(layout: AppLayout) {
+    this[orderKey] = layout.order.joinToString(",")
+    this[hiddenKey] = layout.hidden.joinToString(",")
+    if (layout.homePending) this[homePendingKey] = true else remove(homePendingKey)
+    if (layout.dockSix) this[dockSixKey] = true else remove(dockSixKey)
+}
+
 /** Saves the app order + hidden set. Same DataStore as the old favorites, so the upgrade can read them. */
 class AppLayoutStore(context: Context) {
     private val store = context.applicationContext.favoritesDataStore
-    private val legacyKey = stringPreferencesKey("favorites")
-    private val orderKey = stringPreferencesKey("order")
-    private val hiddenKey = stringPreferencesKey("hidden")
-    private val homePendingKey = booleanPreferencesKey("home_pending") // see AppLayout.homePending; absent = false
-
-    private fun String.toList() = split(',').filter(String::isNotBlank)
-
-    val layout: Flow<StoredLayout> = store.data.map { prefs ->
-        val order = prefs[orderKey]?.toList()
-        StoredLayout(
-            layout = order?.let { AppLayout(it, prefs[hiddenKey]?.toList().orEmpty().toSet(), prefs[homePendingKey] == true) },
-            legacyFavorites = prefs[legacyKey]?.toList(),
-        )
-    }
+    val layout: Flow<StoredLayout> = store.data.map { it.toStoredLayout() }
 
     suspend fun save(layout: AppLayout) {
-        store.edit {
-            it[orderKey] = layout.order.joinToString(",")
-            it[hiddenKey] = layout.hidden.joinToString(",")
-            if (layout.homePending) it[homePendingKey] = true else it.remove(homePendingKey)
-        }
+        store.edit { it.writeLayout(layout) }
     }
 }

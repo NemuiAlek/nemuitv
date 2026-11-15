@@ -5,8 +5,10 @@ package com.nemuigames.nemuitv.favorites
  * [hidden] are packages the user hid. Favorites are not stored: they are the first [AppOrder.DOCK_SIZE] visible items.
  * [homePending]: this layout came from the no-Home-Assistant defaults (⌂ in the tray) and the user hasn't moved ⌂
  * since, so ⌂ may still move to the front once Home Assistant is set up ([AppOrder.promoteHome]).
+ * [dockSix]: the one-time 5 -> 6 tile dock migration has run for this layout ([AppOrder.reconcile]). New layouts
+ * ([AppOrder.defaults], [AppOrder.upgrade]) start true; saves from before 1.1.0 read as false and migrate once.
  */
-data class AppLayout(val order: List<String>, val hidden: Set<String>, val homePending: Boolean = false)
+data class AppLayout(val order: List<String>, val hidden: Set<String>, val homePending: Boolean = false, val dockSix: Boolean = false)
 
 /** Pure rules for the app order. */
 object AppOrder {
@@ -36,7 +38,7 @@ object AppOrder {
     /** Migrates old saved favorites: ⌂ first, then they stay (in order), then every other installed app by label. */
     fun upgrade(savedFavorites: List<String>, installedByLabel: List<String>): AppLayout {
         val favs = savedFavorites.distinct().filterNot { it == HOME_ID }
-        return AppLayout(listOf(HOME_ID) + favs + installedByLabel.filterNot { it in favs || it == HOME_ID }, HIDDEN_BY_DEFAULT)
+        return AppLayout(listOf(HOME_ID) + favs + installedByLabel.filterNot { it in favs || it == HOME_ID }, HIDDEN_BY_DEFAULT, dockSix = true)
     }
 
     /**
@@ -47,7 +49,7 @@ object AppOrder {
     fun defaults(installedByLabel: List<String>, haConfigured: Boolean): AppLayout {
         val preferred = PREFERRED.filter { it in installedByLabel }
         val apps = preferred + installedByLabel.filterNot { it in preferred }
-        if (haConfigured) return AppLayout(listOf(HOME_ID) + apps, HIDDEN_BY_DEFAULT)
+        if (haConfigured) return AppLayout(listOf(HOME_ID) + apps, HIDDEN_BY_DEFAULT, dockSix = true)
         // Count only apps that will be visible, so hidden-by-default entries don't eat dock slots.
         var shown = 0
         var at = apps.size
@@ -56,22 +58,24 @@ object AppOrder {
             if (shown == DOCK_SIZE) { at = i; break }
             shown++
         }
-        return AppLayout(apps.toMutableList().apply { add(at, HOME_ID) }, HIDDEN_BY_DEFAULT, homePending = true)
+        return AppLayout(apps.toMutableList().apply { add(at, HOME_ID) }, HIDDEN_BY_DEFAULT, homePending = true, dockSix = true)
     }
 
     /**
      * Appends installed packages we have not seen to the end (in the given order). Never removes anything.
      * A saved order without ⌂ (from before it was movable) gets it at the front, where it used to be.
-     * One-time dock migration (5 -> 6 tiles): a [AppLayout.homePending] layout with ⌂ right after the 5th visible app
-     * gets ⌂ moved after the 6th, so the row shows 6 apps. The flag stays; a ⌂ the user placed is never touched.
+     * One-time dock migration (5 -> 6 tiles), only while [AppLayout.dockSix] is false, then it is set: a
+     * [AppLayout.homePending] layout with ⌂ right after the 5th visible app gets ⌂ moved after the 6th, so the row
+     * shows 6 apps. A ⌂ the user placed is never touched, and later user moves are never undone.
      */
     fun reconcile(layout: AppLayout, installedByLabel: List<String>): AppLayout {
         val known = layout.order.toSet()
         val fresh = installedByLabel.filterNot { it in known }
-        val order = if (HOME_ID in known) layout.order else listOf(HOME_ID) + layout.order
-        val full = order + fresh
-        val moved = if (layout.homePending) migrateHomeToSixth(full, installedByLabel.toSet(), layout.hidden) else full
-        return if (moved === layout.order) layout else layout.copy(order = moved)
+        val withHome = if (HOME_ID in known) layout.order else listOf(HOME_ID) + layout.order
+        var order = if (withHome === layout.order && fresh.isEmpty()) layout.order else withHome + fresh
+        if (!layout.dockSix && layout.homePending) order = migrateHomeToSixth(order, installedByLabel.toSet(), layout.hidden)
+        return if (order == layout.order && layout.dockSix) layout
+        else layout.copy(order = order, dockSix = true)
     }
 
     private fun migrateHomeToSixth(order: List<String>, installed: Set<String>, hidden: Set<String>): List<String> {

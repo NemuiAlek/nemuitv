@@ -128,6 +128,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         // a fast app-list load at boot could look like "never saved" and overwrite the user's layout.
         // Once Home Assistant is configured (config.json often arrives after the first run), a first-run layout that
         // still has ⌂ where the no-HA defaults put it gets ⌂ in the favorites, once (AppOrder.promoteHome).
+        // reconcile also runs the one-time 5 -> 6 tile dock migration (AppLayout.dockSix).
         viewModelScope.launch {
             val haSetUp = configStore.state.map { (it as? ConfigResult.Ok)?.config?.ha != null }.distinctUntilChanged()
             combine(layoutStore.layout, apps, haSetUp) { stored, installed, ha -> Triple(stored, installed, ha) }.collect { (stored, installed, ha) ->
