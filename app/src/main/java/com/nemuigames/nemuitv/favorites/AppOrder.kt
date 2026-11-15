@@ -2,7 +2,7 @@ package com.nemuigames.nemuitv.favorites
 
 /**
  * The one saved app order. [order] holds every package we have ever seen (uninstalled ones are kept, not shown);
- * [hidden] are packages the user hid. Favorites are not stored: they are the first [AppOrder.MAX_FAVORITES] visible apps.
+ * [hidden] are packages the user hid. Favorites are not stored: they are the first [AppOrder.DOCK_SIZE] visible items.
  * [homePending]: this layout came from the no-Home-Assistant defaults (⌂ in the tray) and the user hasn't moved ⌂
  * since, so ⌂ may still move to the front once Home Assistant is set up ([AppOrder.promoteHome]).
  */
@@ -10,7 +10,8 @@ data class AppLayout(val order: List<String>, val hidden: Set<String>, val homeP
 
 /** Pure rules for the app order. */
 object AppOrder {
-    const val MAX_FAVORITES = 5
+    /** The favorites row is always this many tiles: 6 apps, or ⌂ + 5 apps when ⌂ is among the first 6. */
+    const val DOCK_SIZE = 6
 
     /** The ⌂ Home hub tile. It is a normal entry in the saved order (movable, never hidden, always "installed"). */
     const val HOME_ID = "__home"
@@ -40,19 +41,19 @@ object AppOrder {
 
     /**
      * First-run layout: PREFERRED apps that are installed, then the rest in the given (label) order. ⌂ goes first
-     * when Home Assistant is configured; otherwise right after the favorites (the tray's first spot), or last if
+     * when Home Assistant is configured; otherwise right after the 6th app (the tray's first spot), or last if
      * there are fewer apps than that, and the layout is marked [AppLayout.homePending].
      */
     fun defaults(installedByLabel: List<String>, haConfigured: Boolean): AppLayout {
         val preferred = PREFERRED.filter { it in installedByLabel }
         val apps = preferred + installedByLabel.filterNot { it in preferred }
         if (haConfigured) return AppLayout(listOf(HOME_ID) + apps, HIDDEN_BY_DEFAULT)
-        // Count only apps that will be visible, so hidden-by-default entries don't eat favorite slots.
+        // Count only apps that will be visible, so hidden-by-default entries don't eat dock slots.
         var shown = 0
         var at = apps.size
         for ((i, a) in apps.withIndex()) {
             if (a in HIDDEN_BY_DEFAULT) continue
-            if (shown == MAX_FAVORITES) { at = i; break }
+            if (shown == DOCK_SIZE) { at = i; break }
             shown++
         }
         return AppLayout(apps.toMutableList().apply { add(at, HOME_ID) }, HIDDEN_BY_DEFAULT, homePending = true)
@@ -61,12 +62,24 @@ object AppOrder {
     /**
      * Appends installed packages we have not seen to the end (in the given order). Never removes anything.
      * A saved order without ⌂ (from before it was movable) gets it at the front, where it used to be.
+     * One-time dock migration (5 -> 6 tiles): a [AppLayout.homePending] layout with ⌂ right after the 5th visible app
+     * gets ⌂ moved after the 6th, so the row shows 6 apps. The flag stays; a ⌂ the user placed is never touched.
      */
     fun reconcile(layout: AppLayout, installedByLabel: List<String>): AppLayout {
         val known = layout.order.toSet()
         val fresh = installedByLabel.filterNot { it in known }
         val order = if (HOME_ID in known) layout.order else listOf(HOME_ID) + layout.order
-        return if (order === layout.order && fresh.isEmpty()) layout else layout.copy(order = order + fresh)
+        val full = order + fresh
+        val moved = if (layout.homePending) migrateHomeToSixth(full, installedByLabel.toSet(), layout.hidden) else full
+        return if (moved === layout.order) layout else layout.copy(order = moved)
+    }
+
+    private fun migrateHomeToSixth(order: List<String>, installed: Set<String>, hidden: Set<String>): List<String> {
+        val vis = order.filter { (it == HOME_ID || it in installed) && it !in hidden }
+        if (vis.indexOf(HOME_ID) != DOCK_SIZE - 1) return order
+        val sixth = vis.getOrNull(DOCK_SIZE) ?: return order
+        val rest = order.filterNot { it == HOME_ID }
+        return rest.toMutableList().apply { add(rest.indexOf(sixth) + 1, HOME_ID) }
     }
 
     /**
@@ -81,18 +94,8 @@ object AppOrder {
     fun visible(layout: AppLayout, installed: Set<String>): List<String> =
         layout.order.filter { (it == HOME_ID || it in installed) && it !in layout.hidden }
 
-    /**
-     * The dock: visible items up to and including the [MAX_FAVORITES]-th app. ⌂ does not use a favorites slot, so a
-     * dock holding ⌂ shows 5 apps + ⌂; with ⌂ after the 5th app it stays in the tray.
-     */
-    fun favorites(visible: List<String>): List<String> {
-        var apps = 0
-        for ((i, p) in visible.withIndex()) {
-            if (p == HOME_ID) continue
-            if (++apps == MAX_FAVORITES) return visible.take(i + 1)
-        }
-        return visible
-    }
+    /** The dock: the first [DOCK_SIZE] visible items, ⌂ included if it is among them (⌂ + 5 apps, else 6 apps). */
+    fun favorites(visible: List<String>): List<String> = visible.take(DOCK_SIZE)
 
     /** Where dock focus goes with no preference: the first app, else ⌂ if it is all there is, else nothing. */
     fun defaultFocus(dock: List<String>): String? = dock.firstOrNull { it != HOME_ID } ?: dock.firstOrNull()
@@ -118,7 +121,7 @@ object AppOrder {
     /** Like [move] but the target slot stays within the dock (first row of favorites). */
     fun moveInDock(layout: AppLayout, installed: Set<String>, pkg: String, delta: Int): AppLayout {
         if (pkg == HOME_ID && layout.homePending) return moveInDock(layout.copy(homePending = false), installed, pkg, delta)
-        return moveClamped(layout, installed, pkg, delta, maxSlot = dockMaxSlot(layout, installed, pkg))
+        return moveClamped(layout, installed, pkg, delta, maxSlot = dockMaxSlot(layout, installed))
     }
 
     /** ⌂ can't be hidden. */
@@ -139,11 +142,9 @@ object AppOrder {
         return after.getOrNull(i) ?: after.getOrNull(i - 1)
     }
 
-    /** Last dock slot [pkg] may move to: ⌂ must stay inside the dock (so one short of the end), apps may take the last tile. */
-    private fun dockMaxSlot(layout: AppLayout, installed: Set<String>, pkg: String): Int {
-        val last = favorites(visible(layout, installed)).lastIndex
-        return if (pkg == HOME_ID) minOf(last, MAX_FAVORITES - 1) else last
-    }
+    /** Last dock slot any item, ⌂ included, may move to: the last tile of the dock. */
+    private fun dockMaxSlot(layout: AppLayout, installed: Set<String>): Int =
+        favorites(visible(layout, installed)).lastIndex
 
     private fun moveClamped(layout: AppLayout, installed: Set<String>, pkg: String, delta: Int, maxSlot: Int): AppLayout {
         val vis = visible(layout, installed)

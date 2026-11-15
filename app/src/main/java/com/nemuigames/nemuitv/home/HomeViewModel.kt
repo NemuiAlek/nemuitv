@@ -74,7 +74,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         combine(layoutStore.layout, pendingLayout) { saved, pending -> pending ?: saved.layout }
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    /** Visible entries in saved order: the tray grid (⌂ is one of them, a stand-in [HOME_APP]). The first five are the favorites (the dock). */
+    /** Visible entries in saved order: the tray grid (⌂ is one of them, a stand-in [HOME_APP]). The first six are the favorites (the dock). */
     val trayApps: StateFlow<List<AppInfo>> = combine(layout, apps) { l, installed ->
         if (l == null || installed.isEmpty()) return@combine emptyList()
         val byPkg = installed.associateBy { it.packageName } + (AppOrder.HOME_ID to HOME_APP)
@@ -270,7 +270,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Move in the tray by [delta] visible slots. */
     fun moveApp(pkg: String, delta: Int) = edit { AppOrder.move(it, installedPkgs(), pkg, delta) }
-    /** Move within the dock (first five). Only for apps currently in the dock. */
+    /** Move within the dock (first six). Only for apps currently in the dock. */
     fun moveInDock(pkg: String, delta: Int) = edit { AppOrder.moveInDock(it, installedPkgs(), pkg, delta) }
     fun hideApp(pkg: String) = edit { AppOrder.hide(it, pkg) }
     fun unhideApp(pkg: String) = edit { AppOrder.unhide(it, pkg) }

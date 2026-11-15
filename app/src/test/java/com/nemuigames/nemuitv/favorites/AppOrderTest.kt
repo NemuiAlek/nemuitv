@@ -50,7 +50,7 @@ class AppOrderTest {
         val m = AppOrder.move(l, l.order.toSet(), "a", 6)
         val v = vis(m)
         assertEquals(listOf("b", "c", "d", "e", "f", "g", "a", "h"), v)
-        assertEquals(listOf("b", "c", "d", "e", "f"), AppOrder.favorites(v))
+        assertEquals(listOf("b", "c", "d", "e", "f", "g"), AppOrder.favorites(v))
     }
 
     @Test fun move_down_pastEnd_clampsToLast() {
@@ -67,7 +67,7 @@ class AppOrderTest {
     @Test fun moveInDock_staysInRowOne() {
         val l = layout(*letters(7).toTypedArray())
         val all = l.order.toSet()
-        assertEquals(l.order, AppOrder.moveInDock(l, all, "e", 1).order)
+        assertEquals(l.order, AppOrder.moveInDock(l, all, "f", 1).order)
         assertEquals(listOf("b", "a", "c", "d", "e", "f", "g"), AppOrder.moveInDock(l, all, "a", 1).order)
     }
 
@@ -144,7 +144,7 @@ class AppOrderTest {
     }
 
     @Test fun `defaults withoutHa putsHomeAfterFavorites`() {
-        assertEquals(5, AppOrder.defaults(seven, haConfigured = false).order.indexOf(H))
+        assertEquals(6, AppOrder.defaults(seven, haConfigured = false).order.indexOf(H))
     }
 
     @Test fun `defaults withoutHa fewApps putsHomeLast`() {
@@ -152,9 +152,9 @@ class AppOrderTest {
     }
 
     @Test fun `defaults withoutHa hiddenSettingsDontEatFavoriteSlots`() {
-        val l = AppOrder.defaults(listOf("a", "com.android.tv.settings", "b", "c", "d", "e", "f"), haConfigured = false)
+        val l = AppOrder.defaults(listOf("a", "com.android.tv.settings", "b", "c", "d", "e", "f", "g"), haConfigured = false)
         val v = AppOrder.visible(l, l.order.toSet())
-        assertEquals(5, v.indexOf(H))
+        assertEquals(6, v.indexOf(H))
     }
 
     @Test fun `reconcile insertsHomeFirstWhenMissing`() {
@@ -189,9 +189,9 @@ class AppOrderTest {
         assertEquals("g", vis(AppOrder.move(l, all, "g", -6)).first())
     }
 
-    @Test fun `favorites homeDoesNotUseASlot`() {
+    @Test fun `favorites isFirstSixVisibleItems`() {
         assertEquals(listOf(H, "a", "b", "c", "d", "e"), AppOrder.favorites(listOf(H, "a", "b", "c", "d", "e", "f")))
-        assertEquals(listOf("a", "b", "c", "d", "e"), AppOrder.favorites(listOf("a", "b", "c", "d", "e", H, "f")))
+        assertEquals(listOf("a", "b", "c", "d", "e", "f"), AppOrder.favorites(listOf("a", "b", "c", "d", "e", "f", H, "g")))
         assertEquals(listOf("a", H), AppOrder.favorites(listOf("a", H)))
     }
 
@@ -202,11 +202,57 @@ class AppOrderTest {
         assertEquals(listOf(H, "a", "b", "c", "e", "d", "f"), AppOrder.moveInDock(l, all, "d", 1).order)
     }
 
-    @Test fun `moveInDock homeStaysInDock`() {
+    @Test fun `moveInDock homeReachesSixthTile`() {
         val l = layout("a", "b", "c", "d", H, "e", "f")
         val all = l.order.toSet()
-        assertEquals(l.order, AppOrder.moveInDock(l, all, H, 1).order) // clamped at slot 4
+        assertEquals(listOf("a", "b", "c", "d", "e", H, "f"), AppOrder.moveInDock(l, all, H, 1).order)
+        assertEquals(listOf("a", "b", "c", "d", "e", H, "f"), AppOrder.moveInDock(AppOrder.moveInDock(l, all, H, 1), all, H, 1).order) // clamped at slot 5
         assertEquals(listOf("a", "b", "c", H, "d", "e", "f"), AppOrder.moveInDock(l, all, H, -1).order)
+    }
+
+    @Test fun noHa_sixApps_rowIsSixApps() {
+        val apps7 = letters(7)
+        val l = AppOrder.defaults(apps7, haConfigured = false)
+        val v = AppOrder.visible(l, apps7.toSet())
+        assertEquals(apps7.take(6), AppOrder.favorites(v))
+        assertEquals(6, v.indexOf(H))
+    }
+
+    @Test fun ha_rowIsHomePlusFive() {
+        val apps7 = letters(7)
+        val l = AppOrder.defaults(apps7, haConfigured = true)
+        assertEquals(listOf(H) + apps7.take(5), AppOrder.favorites(AppOrder.visible(l, apps7.toSet())))
+    }
+
+    @Test fun `migrate homePendingAfterFifth movesAfterSixth`() {
+        val apps = letters(7)
+        val l = AppLayout(apps.take(5) + H + apps.drop(5), emptySet(), homePending = true)
+        val r = AppOrder.reconcile(l, apps)
+        assertEquals(apps.take(6) + H + apps.drop(6), r.order)
+        assertEquals(true, r.homePending)
+        assertEquals(r, AppOrder.reconcile(r, apps)) // once
+    }
+
+    @Test fun migrate_userPlacedHome_untouched() {
+        val apps = letters(7)
+        val l = AppLayout(apps.take(5) + H + apps.drop(5), emptySet(), homePending = false)
+        assertEquals(l, AppOrder.reconcile(l, apps))
+    }
+
+    @Test fun fewerThanSix_allShown() {
+        val apps = letters(3)
+        val l = AppOrder.defaults(apps, haConfigured = false)
+        val v = AppOrder.visible(l, apps.toSet())
+        assertEquals(apps + H, v)
+        assertEquals(apps + H, AppOrder.favorites(v))
+    }
+
+    @Test fun moveInDock_appReachesSixthTile() {
+        val apps = letters(7)
+        val l = AppOrder.defaults(apps, haConfigured = false)
+        val all = apps.toSet()
+        val m = AppOrder.moveInDock(l, all, "a", 5)
+        assertEquals(5, AppOrder.visible(m, all).indexOf("a"))
     }
 
     @Test fun `defaultFocus firstAppElseHomeElseNull`() {

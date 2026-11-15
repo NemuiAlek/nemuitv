@@ -54,7 +54,7 @@ fun Dock(
         if (n > 0) LazyRow(
             // requiredHeight lets the row overflow the dock's height equally above and below (centered), so a
             // lifted tile has room to rise without the dock itself moving.
-            // unbounded: with ⌂ in the row (5 apps + ⌂) the exact width is a few dp wider than the safe area; a clamped
+            // unbounded: with ⌂ in the row (5 apps + ⌂, or 6 apps) the exact width is a few dp wider than the safe area; a clamped
             // LazyRow scrolls to keep the focused tile in view, so the whole row slid on every ◀ ▶. The extra is EdgeRoom
             // (empty), so letting it overflow is invisible.
             modifier = Modifier.offset(x = -EdgeRoom).wrapContentWidth(Alignment.Start, unbounded = true).width(rowWidth).requiredHeight(TileHeight + VerticalRoom * 2),
