@@ -56,7 +56,7 @@ Read the license on any clip you use. Slow nature scenes, clouds, water and abst
    powershell -ExecutionPolicy Bypass -File scripts\fix-wallpapers.ps1
    ```
 
-   What it does: re-encodes each video to H.264, at most 1080p, 30 fps, BT.709 tags, no audio. It moves your originals to `wallpapers/originals/`.
+   What it does: re-encodes each video to H.264, at most 1080p, 30 fps, about 10 Mbps, BT.709 color tags, no audio. It moves your originals to `wallpapers/originals/`.
 
 3. For a Chromecast with Google TV, lower the size and bitrate yourself (see above). The script's output is made for the Streamer.
 

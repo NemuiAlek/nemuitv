@@ -38,7 +38,8 @@ foreach ($f in $files) {
     }
     Write-Host "converting $base ..."
     $ffOut = Invoke-Native 'ffmpeg' @('-v', 'error', '-nostdin', '-y', '-i', $f.FullName, '-c:v', 'libx264', '-preset', 'slow', '-crf', '20',
-        '-vf', "scale='min(1920,iw)':-2,fps=30", '-pix_fmt', 'yuv420p',
+        '-maxrate', '10M', '-bufsize', '20M',
+        '-vf', "scale='min(1920,iw)':-2,fps=30,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709", '-pix_fmt', 'yuv420p',
         '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-an', '-movflags', '+faststart', '-f', 'mp4', $tmp)
     if ($global:NativeExit -eq 0) {
         Move-Item -LiteralPath $f.FullName -Destination $orig

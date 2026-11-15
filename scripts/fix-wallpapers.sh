@@ -17,8 +17,8 @@ for f in "${files[@]}"; do
   orig="wallpapers/originals/$base"
   if [[ -e "$orig" ]]; then echo "skipped  $base (wallpapers/originals/ already has a file with that name)" >&2; continue; fi
   echo "converting $base …"
-  if ffmpeg -v error -nostdin -y -i "$f" -c:v libx264 -preset slow -crf 20 \
-      -vf "scale='min(1920,iw)':-2,fps=30" -pix_fmt yuv420p \
+  if ffmpeg -v error -nostdin -y -i "$f" -c:v libx264 -preset slow -crf 20 -maxrate 10M -bufsize 20M \
+      -vf "scale='min(1920,iw)':-2,fps=30,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709" -pix_fmt yuv420p \
       -colorspace bt709 -color_primaries bt709 -color_trc bt709 -an -movflags +faststart -f mp4 "$tmp"; then
     mv "$f" "$orig"
     mv "$tmp" "$out"
