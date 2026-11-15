@@ -101,13 +101,13 @@ Then switch accessibility on:
 adb shell settings put secure accessibility_enabled 1
 ```
 
-Check that the service is running. The output should mention "NemuiTV Home button":
+Check that the service is running. The output should show a line with `HomeTakeoverService`:
 
 ```
-adb shell dumpsys accessibility | grep "Bound services"
+adb shell dumpsys activity services com.nemuigames.nemuitv | grep ServiceRecord
 ```
 
-On Windows PowerShell, use `adb shell dumpsys accessibility | Select-String "Bound services"`.
+On Windows, use `findstr ServiceRecord` instead of `grep ServiceRecord`.
 
 Press Home on the remote. NemuiTV should open.
 

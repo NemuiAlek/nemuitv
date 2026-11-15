@@ -141,7 +141,7 @@ function Test-TakeoverRunning {
         $out = Invoke-Adb @('shell', 'dumpsys', 'activity', 'services', $Pkg) -NoLost
         # Running = an active "* ServiceRecord{... HomeTakeoverService}" block with its own "app=ProcessRecord" line
         # (old DEAD ConnectionRecords also name the service, and other services have their own app= lines).
-        if ($out -match '(?s)\* ServiceRecord\{[^}]*\.takeover\.HomeTakeoverService\}(?:(?!\* ServiceRecord|\n {2}[A-Z][A-Za-z ]*:\r?\n).)*?app=ProcessRecord') { return $true }
+        if ($out -cmatch '(?s)\* ServiceRecord\{[^}]*\.takeover\.HomeTakeoverService[ }](?:(?!\* ServiceRecord|\n {2}[A-Z][A-Za-z ]*:\r?\n).)*?app=ProcessRecord') { return $true }
         Start-Sleep -Milliseconds ([int]($stepS * 1000))
     }
     return $false

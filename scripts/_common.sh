@@ -100,7 +100,7 @@ takeover_running() {
     out=$("${ADB[@]}" shell dumpsys activity services "$PKG" 2>/dev/null </dev/null | tr -d '\r' || true)
     # Running = an active "* ServiceRecord{… HomeTakeoverService}" block with its own "app=ProcessRecord" line
     # (old DEAD ConnectionRecords also name the service, and other services have their own app= lines).
-    if awk '/^ *\* ServiceRecord\{/ { inb = ($0 ~ /\.takeover\.HomeTakeoverService\}/) } /^ *[A-Z][A-Za-z ]*:$/ { inb = 0 }
+    if awk '/^ *\* ServiceRecord\{/ { inb = ($0 ~ /\.takeover\.HomeTakeoverService[ }]/) } /^ *[A-Z][A-Za-z ]*:$/ { inb = 0 }
             inb && /app=ProcessRecord/ { f = 1 } END { exit !f }' <<<"$out"; then return 0; fi
     sleep "${WAIT_STEP_S:-0.5}"
   done
