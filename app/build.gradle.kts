@@ -16,8 +16,8 @@ android {
         applicationId = "com.nemuigames.nemuitv"
         minSdk = 31
         targetSdk = 37
-        versionCode = 10002
-        versionName = "1.0.2"
+        versionCode = 10100
+        versionName = "1.1.0"
         // arm64 = emulator AVD; armeabi-v7a = Google TV Streamer (32-bit userspace on MT8696)
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }

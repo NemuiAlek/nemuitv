@@ -36,7 +36,7 @@ You need a Mac, Windows or Linux computer on the same Wi-Fi network as the TV.
 
 NemuiTV never turns off Google's home screen. It takes over the remote's Home button instead: tap Home for NemuiTV, hold Home for the Control Center. Google's home stays installed, and undo gives the Home button back to it.
 
-1. Download `NemuiTV-setup-1.0.2.zip` from the [latest release](https://github.com/NemuiAlek/nemuitv/releases/latest) and unzip it. It holds the APK, the scripts and `config.example.json`.
+1. Download `NemuiTV-setup-1.1.0.zip` from the [latest release](https://github.com/NemuiAlek/nemuitv/releases/latest) and unzip it. It holds the APK, the scripts and `config.example.json`.
    - On Windows the simple path is the browser: open the Releases page, download the zip and unzip it (right-click, Extract All). The GitHub command-line tool `gh` is optional, and `winget install --id GitHub.cli` needs an administrator prompt, so you don't need it.
 2. Open a terminal in the unzipped folder.
    - Mac or Linux: `bash scripts/setup.sh`
@@ -46,7 +46,7 @@ NemuiTV never turns off Google's home screen. It takes over the remote's Home bu
 4. The script then turns on the Home-button takeover and Now Playing, and opens NemuiTV on the TV.
 5. On the TV, open the Setup page (hold Home, then Launcher settings, then Setup). The first three rows should say Done or On. Turn Screensaver on here if you want NemuiTV as your screensaver. You can turn Wireless debugging or ADB debugging off now.
 
-Optional: check the download first. `NemuiTV-1.0.2.apk.sha256` on the release page holds the expected hash. On Mac, `shasum -a 256 NemuiTV-1.0.2.apk` should print the same value.
+Optional: check the download first. `NemuiTV-1.1.0.apk.sha256` on the release page holds the expected hash. On Mac, `shasum -a 256 NemuiTV-1.1.0.apk` should print the same value.
 
 Stuck on a step? [docs/manual-setup.md](docs/manual-setup.md) lists every `adb` command the script runs.
 
