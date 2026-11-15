@@ -135,12 +135,35 @@ if ($global:AdbSerial) {
         [Console]::Error.WriteLine($global:PickList)
         Fail 'run this again with -Serial ADDRESS for the TV you want.'
     } else {
-        Write-Host 'No device is connected yet. On the TV:'
-        Write-Host '  1. Settings > System > About, then press OK on "Android TV OS build" 7 times (Developer options turn on).'
-        Write-Host '  2. Settings > System > Developer options > turn on "Wireless debugging".'
-        Write-Host '  3. Choose "Pair device with pairing code". The TV shows an address (IP:port) and a 6-digit code.'
-        Write-Host "The pairing popup shows an address and a 6-digit code (use these first). After pairing, the Wireless debugging screen"
-        Write-Host "shows 'IP address & Port' (a different port) - that's the connect address."
+        Write-Host 'No device is connected yet. First, on the TV: Settings > System > About, then press OK on "Android TV OS build" 7 times (Developer options turn on).'
+        Say 'In Settings > System > Developer options, which one does your TV have?'
+        Say '  1. "Wireless debugging" (Google TV Streamer, Chromecast with Google TV)'
+        Say '  2. "ADB debugging" or "Network debugging" (TVs with Google TV built in, e.g. Sony BRAVIA, TCL, Hisense)'
+        $choice = ''
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            $choice = (Ask 'Type 1 or 2').Trim()
+            if (($choice -ceq '1') -or ($choice -ceq '2')) { break }
+            $choice = ''
+        }
+        if ($choice -eq '') { Fail 'I need a 1 or a 2. Run setup again and pick the option your TV has.' }
+        if ($choice -ceq '2') {
+            Say 'Turn on "ADB debugging". Your TV''s IP address is in Settings > Network & Internet > (your network).'
+            $tvAddr = Get-TvAddr (Ask 'TV IP address')
+            if (-not $tvAddr) { Fail 'no TV IP address entered.' }
+            if (-not (Connect-AdbDebug $tvAddr)) {
+                Fail ("couldn't connect: $($global:ConnectOut)`n" +
+                    "Try these, then run setup again:`n" +
+                    "  - Turn `"ADB debugging`" off and on again on the TV.`n" +
+                    "  - The TV must be on Wi-Fi, not an Ethernet cable, on the same network as this computer.`n" +
+                    "  - If your TV has `"Wireless debugging`" instead, run setup again and pick 1.")
+            }
+            $global:AdbSerial = $tvAddr; Say "Connected to $($global:AdbSerial)."
+            Say 'On the TV, choose "Always allow from this computer", then OK.'
+            if (-not (Wait-Authorized 60)) { Fail "the TV didn't allow this computer (state: $($global:LastState)). Accept the prompt on the TV and run setup again." }
+        } else {
+        Say 'Turn on "Wireless debugging", then choose "Pair device with pairing code". The TV shows an address (IP:port) and a 6-digit code.'
+        Say 'The pairing popup shows an address and a 6-digit code (use these first). After pairing, the Wireless debugging screen'
+        Say "shows 'IP address & Port' (a different port) - that's the connect address."
         $pairAddr = (Ask 'Pairing address (IP:port shown on the TV)').Trim()
         if ($pairAddr -eq '') { Fail 'no pairing address entered.' }
         $pairCode = (Ask 'Pairing code (6 digits)').Trim()
@@ -155,6 +178,7 @@ if ($global:AdbSerial) {
         if ($out -notmatch '(?i)connected to') { Fail "couldn't connect: $out" }
         $global:AdbSerial = $connAddr; Say "Connected to $($global:AdbSerial)."
         Say "If the TV asks 'Allow USB debugging?', choose Always allow."
+        }
     }
 }
 Assert-Device
@@ -218,5 +242,5 @@ Say '  - Permissions: granted'
 Say '  - Home button: on'
 Say '  - Now Playing: on'
 Say ''
-Say 'Continue on the TV (the Setup checklist opens). You can turn Wireless debugging off now.'
+Say 'Continue on the TV (the Setup checklist opens). You can turn Wireless debugging / ADB debugging off now.'
 [void](Invoke-Adb @('shell', 'am', 'start', '-n', "$Pkg/.HomeActivity"))

@@ -75,7 +75,7 @@ function Invoke-Adb {
     $out = Invoke-Native $global:AdbBin $a
     $global:AdbExit = $global:NativeExit
     if ((-not $NoLost) -and ($global:AdbExit -ne 0) -and ($out -match 'error: (device|no devices|closed|protocol)|device offline|no devices/emulators')) {
-        Stop-Script "Lost contact with the TV. Check 'adb devices' / reconnect wireless debugging."
+        Stop-Script "Lost contact with the TV. Check 'adb devices' / reconnect (Wireless debugging or ADB debugging)."
     }
     return $out
 }
@@ -108,6 +108,50 @@ function Select-Device {
     return 'ok'
 }
 
+# "ADB debugging" connect path (TVs without a "Wireless debugging" screen).
+# Get-TvAddr: host:port from what the user typed (spaces trimmed, :5555 added when there is no port). $null when empty.
+function Get-TvAddr {
+    param([string]$typed)
+    if ($null -eq $typed) { return $null }
+    $a = $typed.Trim()
+    if ($a -eq '') { return $null }
+    if (-not $a.Contains(':')) { $a = "${a}:5555" }
+    return $a
+}
+# Connect-AdbDebug ADDR: disconnect any stale entry, then connect. $true when adb says "connected to" (also "already connected to").
+# adb's output is left in $global:ConnectOut.
+function Connect-AdbDebug {
+    param([string]$addr)
+    [void](Invoke-Adb @('disconnect', $addr) -NoSerial -NoLost)
+    $global:ConnectOut = Invoke-Adb @('connect', $addr) -NoSerial -NoLost
+    return ($global:ConnectOut -match '(?i)connected to')
+}
+# Wait-Authorized SECONDS: poll get-state every 2 s (env WAIT_STEP_S overrides the pause, for tests).
+# $true = "device"; $false = timed out (last state in $global:LastState). Prints the Allow hint once, the first time it sees "unauthorized".
+function Wait-Authorized {
+    param([int]$Seconds = 60)
+    $max = [int][math]::Floor($Seconds / 2)
+    if ($max -lt 1) { $max = 1 }
+    $stepS = 2.0
+    if ($env:WAIT_STEP_S) { $stepS = [double]$env:WAIT_STEP_S }
+    $hinted = $false
+    $global:LastState = ''
+    for ($i = 0; $i -lt $max; $i++) {
+        $s = Invoke-Adb @('get-state') -NoLost
+        if ($s -match '(?i)unauthorized') { $s = 'unauthorized' }
+        elseif ($s -match '(?i)offline') { $s = 'offline' }
+        else { $s = (($s -split "`n")[0]).Trim() }
+        $global:LastState = $s
+        if ($s -ceq 'device') { return $true }
+        if (($s -ceq 'unauthorized') -and (-not $hinted)) {
+            $hinted = $true
+            Write-Host 'Waiting for you to press Allow on the TV...'
+        }
+        Start-Sleep -Milliseconds ([int]($stepS * 1000))
+    }
+    return $false
+}
+
 # Stop early (before touching anything) if the device isn't reachable.
 function Assert-Device {
     if (-not $global:AdbSerial) {
@@ -122,7 +166,7 @@ function Assert-Device {
     if ($global:AdbExit -ne 0) {
         $where = ''
         if ($global:AdbSerial) { $where = " ($($global:AdbSerial))" }
-        Stop-Script "Can't reach the device$where. Check 'adb devices' / reconnect wireless debugging."
+        Stop-Script "Can't reach the device$where. Check 'adb devices' / reconnect (Wireless debugging or ADB debugging)."
     }
 }
 
