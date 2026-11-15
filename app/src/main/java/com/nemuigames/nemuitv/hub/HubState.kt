@@ -136,6 +136,8 @@ class HubState(
     private val commands = mutableListOf<Command>()
     /** Car prefix -> when its controls block was set (memory only). */
     private val blockedAtMs = mutableMapOf<String, Long>()
+    /** Car prefix -> the timer that lifts its block after [CAR_BLOCK_MS], so the gray look clears on time. */
+    private val blockTimers = mutableMapOf<String, Job>()
 
     fun open() {
         if (openJob != null) return
@@ -199,7 +201,7 @@ class HubState(
         val gone = removedIds(event)
         val becameLive = !_ui.value.live && replace && port.status.value == HaStatus.CONNECTED
         // A new live connection is one real retry for every car: its key may have been paired meanwhile.
-        if (becameLive) blockedAtMs.clear()
+        if (becameLive) { blockedAtMs.clear(); blockTimers.values.forEach { it.cancel() }; blockTimers.clear() }
         _ui.update { u ->
             val states = applyEntityEvent(if (replace) emptyMap() else u.states, event)
             val model = u.model?.let { m ->
@@ -395,20 +397,31 @@ class HubState(
     private fun carBlocked(prefix: String): Boolean {
         val at = blockedAtMs[prefix] ?: return false
         if (clock() - at >= CAR_BLOCK_MS) {
-            blockedAtMs.remove(prefix)
-            _ui.update { it.copy(blockedCars = it.blockedCars - prefix) }
+            unblock(prefix)
             return false
         }
         showMessage(carNotConnectedMessage(prefix))
         return true
     }
 
+    private fun unblock(prefix: String) {
+        blockedAtMs.remove(prefix)
+        blockTimers.remove(prefix)?.cancel()
+        _ui.update { it.copy(blockedCars = it.blockedCars - prefix) }
+    }
+
     private fun blockOnNoKey(prefix: String): (HaError) -> Boolean = { e ->
         isNoKeyError(e).also { noKey ->
             if (noKey) {
-                blockedAtMs[prefix] = clock()
+                val at = clock()
+                blockedAtMs[prefix] = at
                 _ui.update { it.copy(blockedCars = it.blockedCars + prefix) }
                 showMessage(carNotConnectedMessage(prefix))
+                blockTimers.remove(prefix)?.cancel()
+                blockTimers[prefix] = scope.launch {
+                    delay(CAR_BLOCK_MS)
+                    if (blockedAtMs[prefix] == at) unblock(prefix)
+                }
             }
         }
     }

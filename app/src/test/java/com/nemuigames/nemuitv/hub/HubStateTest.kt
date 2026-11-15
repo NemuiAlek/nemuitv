@@ -677,6 +677,20 @@ class HubStateTest {
         assertTrue(hub.ui.value.blockedCars.isEmpty())
     }
 
+    @Test fun `noKeyBlock grayLookClearsOnTimeWithoutPress`() = runTest {
+        val hub = openedWithCars()
+        port.callResult = HaResult.Error(com.nemuigames.nemuitv.ha.HaError("home_assistant_error", NO_KEY))
+        hub.toggleCarClimate("my_car")
+        runCurrent()
+        assertEquals(setOf("my_car"), hub.ui.value.blockedCars)
+
+        advanceTimeBy(CAR_BLOCK_MS - 1); runCurrent()
+        assertEquals(setOf("my_car"), hub.ui.value.blockedCars)
+        advanceTimeBy(1); runCurrent()
+        assertTrue(hub.ui.value.blockedCars.isEmpty())
+        assertEquals(1, port.calls.size) // cleared by the timer, not by a press
+    }
+
     @Test fun `carControls whilePending ignored`() = runTest {
         val hub = openedWithCars()
         hub.toggleCarClimate("my_car")

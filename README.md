@@ -14,7 +14,7 @@ You install it from your computer over Wi-Fi.
 - Looping video wallpapers (you add your own; a dark gradient shows until you do).
 - A Control Center (hold the Home button) with Wi-Fi QR, next wallpaper and settings.
 - A screensaver with a clock, plus a Now Playing banner for music apps.
-- Optional: Home Assistant rooms, scenes, cameras, doorbell pop-up, appliance alerts and Tesla. See [docs/home-assistant.md](docs/home-assistant.md).
+- Optional: Home Assistant rooms, scenes, cameras, doorbell pop-up, appliance alerts and Tesla (battery, tires, temperatures, plus climate and overheat protection). See [docs/home-assistant.md](docs/home-assistant.md).
 - Optional: a Spotify heart button to like the playing song. See [docs/spotify.md](docs/spotify.md).
 
 | Tray | Control Center |
