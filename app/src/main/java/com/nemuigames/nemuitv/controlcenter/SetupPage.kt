@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,8 +44,10 @@ import com.nemuigames.nemuitv.setup.SetupStore
 import com.nemuigames.nemuitv.setup.SystemSwitches
 import com.nemuigames.nemuitv.ui.GuideQr
 import com.nemuigames.nemuitv.wallpaper.listWallpapers
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Switch rows the app can't flip itself. Android's notification manager keeps its own allowed-listener list and ignores
@@ -68,8 +71,16 @@ fun SetupPage(core: NemuiCore, firstRowFocus: FocusRequester, onDone: () -> Unit
     val haStatus by core.ha.status.collectAsStateWithLifecycle()
     val config by core.configStore.state.collectAsStateWithLifecycle()
     var tick by remember { mutableStateOf(0) }
+    // Wallpapers can be pushed while this page is open, so the count is re-read every 3 s while it is shown.
+    var wallpaperCount by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            wallpaperCount = withContext(Dispatchers.IO) { listWallpapers(core.wallpaperDir).size }
+            delay(3000)
+        }
+    }
     // Device state is re-read after each toggle (Android applies the write a moment later).
-    val inputs = remember(tick, haStatus, config) {
+    val inputs = remember(tick, haStatus, config, wallpaperCount) {
         SetupInputs(
             secureGranted = switches.secureGranted(),
             takeoverOn = switches.takeoverOn(),
@@ -82,7 +93,7 @@ fun SetupPage(core: NemuiCore, firstRowFocus: FocusRequester, onDone: () -> Unit
                 HaStatus.CONNECTING -> "Connecting…"
                 else -> null
             },
-            wallpaperCount = listWallpapers(core.wallpaperDir).size,
+            wallpaperCount = wallpaperCount,
             configIssues = when (val c = config) {
                 is ConfigResult.Ok -> c.issues
                 is ConfigResult.Invalid -> listOf(c.reason)
