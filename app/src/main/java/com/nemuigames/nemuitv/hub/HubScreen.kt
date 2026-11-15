@@ -227,7 +227,10 @@ fun HubScreen(core: NemuiCore, onExit: () -> Unit) {
     LaunchedEffect(camerasOn, cameraIds) { core.cameras.setVisible(cameraIds, camerasOn) }
     DisposableEffect(core) { onDispose { core.cameras.setVisible(emptyList(), false) } }
     // The selected pane's rail item vanished (the car went away): back to Overview.
-    LaunchedEffect(railKeys) { selected = validSelection(selected, railKeys) }
+    LaunchedEffect(railKeys) {
+        val v = validSelection(selected, railKeys)
+        if (v != selected) { selected = v; sheet = null; focusRail() }
+    }
     // The selected room vanished from HA (renamed / emptied): back to Overview.
     LaunchedEffect(selected, ui.model) {
         if (ui.model != null && selected != OVERVIEW && selected != TESLA && room == null) {
