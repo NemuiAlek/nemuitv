@@ -39,7 +39,10 @@ class UpdateManagerTest {
         val log = java.util.Collections.synchronizedList(mutableListOf<String>())
         override fun canInstall() = allowed
         override fun openPermissionSettings() { log += "settings" }
-        override fun commit(apk: File) { log += "commit" }
+        @Volatile var lastId = 0
+        override fun createSession(apk: File) = ++lastId
+        override fun commit(sessionId: Int) { log += "commit" }
+        override fun abandon(sessionId: Int) { log += "abandon $sessionId" }
     }
 
     private val apk = ByteArray(10_000) { (it % 251).toByte() }
@@ -178,7 +181,7 @@ class UpdateManagerTest {
         assertEquals(UpdateState.Downloading(0), manager.state.value)
         awaitUntil("installing") { manager.state.value == UpdateState.Installing }
         assertEquals(listOf("close", "commit"), installer.log)
-        manager.onInstallStatus(PackageInstaller.STATUS_SUCCESS, null)
+        manager.onInstallStatus(installer.lastId, PackageInstaller.STATUS_SUCCESS, null)
         assertEquals(UpdateState.Idle, manager.state.value)
     }
 
@@ -214,7 +217,7 @@ class UpdateManagerTest {
         manager.onInstallPressed()
         awaitUntil("installing") { manager.state.value == UpdateState.Installing }
         // Cancel arrives while no host collects: nothing is lost.
-        manager.onInstallStatus(PackageInstaller.STATUS_FAILURE_ABORTED, null)
+        manager.onInstallStatus(installer.lastId, PackageInstaller.STATUS_FAILURE_ABORTED, null)
         var reopens = 0
         manager.reopenRequests.onEach { reopens++ }.launchIn(this)
         runCurrent()
@@ -235,7 +238,7 @@ class UpdateManagerTest {
         awaitUntil("installing") { manager.state.value == UpdateState.Installing }
         manager.onHomeResumed(); runCurrent() // left the prompt with Home: no reopen
         assertEquals(0, reopens)
-        manager.onInstallStatus(PackageInstaller.STATUS_FAILURE_ABORTED, null)
+        manager.onInstallStatus(installer.lastId, PackageInstaller.STATUS_FAILURE_ABORTED, null)
         runCurrent()
         assertEquals(1, reopens)
         manager.onHomeResumed(); runCurrent()
@@ -250,23 +253,65 @@ class UpdateManagerTest {
         runCurrent()
         manager.onInstallPressed()
         awaitUntil("installing") { manager.state.value == UpdateState.Installing }
+        val first = installer.lastId
         // Home on the confirm prompt: Android sends no result, Home just resumes.
         manager.onHomeResumed(); runCurrent()
+        assertEquals(UpdateState.Installing, manager.state.value) // still waiting for a Cancel/Back result
+        advanceTimeBy(UpdateManager.PROMPT_RESULT_GRACE_MS + 1); runCurrent()
         assertEquals(UpdateState.Cancelled, manager.state.value)
+        assertTrue(installer.log.contains("abandon $first"))
         assertEquals(0, reopens)
         manager.onHomeResumed(); runCurrent()
         assertEquals(0, reopens)
+        // Second attempt: a late result from the abandoned first session must not touch it.
         manager.onInstallPressed()
+        assertEquals(UpdateState.Downloading(0), manager.state.value)
+        manager.onInstallStatus(first, PackageInstaller.STATUS_FAILURE_ABORTED, null)
+        assertTrue(manager.state.value is UpdateState.Downloading)
         awaitUntil("installing again") { manager.state.value == UpdateState.Installing }
+        manager.onInstallStatus(first, PackageInstaller.STATUS_FAILURE_ABORTED, null)
+        runCurrent()
+        assertEquals(UpdateState.Installing, manager.state.value)
+        assertEquals(0, reopens)
         assertEquals(2, installer.log.count { it == "commit" })
+        // The current session's result still lands.
+        manager.onInstallStatus(installer.lastId, PackageInstaller.STATUS_FAILURE_ABORTED, null)
+        runCurrent()
+        assertEquals(UpdateState.Cancelled, manager.state.value)
+        assertEquals(1, reopens)
         coroutineContext.cancelChildren()
     }
 
-    @Test fun cancelledReopensWithCancelled() = runT {
+    @Test fun backResultAfterHomeResumeStillReopensAndAbandonsOnce() = runT {
+        primeAvailable()
         var reopens = 0
         manager.reopenRequests.onEach { reopens++ }.launchIn(this)
         runCurrent()
-        manager.onInstallStatus(PackageInstaller.STATUS_FAILURE_ABORTED, "Aborted")
+        manager.onInstallPressed()
+        awaitUntil("installing") { manager.state.value == UpdateState.Installing }
+        // Back on the prompt: Home may resume a moment before the ABORTED result arrives.
+        manager.onHomeResumed(); runCurrent()
+        manager.onInstallStatus(installer.lastId, PackageInstaller.STATUS_FAILURE_ABORTED, null)
+        runCurrent()
+        advanceTimeBy(UpdateManager.PROMPT_RESULT_GRACE_MS + 1); runCurrent()
+        assertEquals(UpdateState.Cancelled, manager.state.value)
+        assertEquals(1, reopens)
+        assertEquals(listOf("abandon ${installer.lastId}"), installer.log.filter { it.startsWith("abandon") })
+        coroutineContext.cancelChildren()
+    }
+
+    private fun installUntilPrompt() {
+        manager.onInstallPressed()
+        awaitUntil("installing") { manager.state.value == UpdateState.Installing }
+    }
+
+    @Test fun cancelledReopensWithCancelled() = runT {
+        primeAvailable()
+        var reopens = 0
+        manager.reopenRequests.onEach { reopens++ }.launchIn(this)
+        runCurrent()
+        installUntilPrompt()
+        manager.onInstallStatus(installer.lastId, PackageInstaller.STATUS_FAILURE_ABORTED, "Aborted")
         runCurrent()
         assertEquals(UpdateState.Cancelled, manager.state.value)
         assertEquals(1, reopens)
@@ -274,14 +319,17 @@ class UpdateManagerTest {
     }
 
     @Test fun failureReopensWithReason() = runT {
+        primeAvailable()
         var reopens = 0
         manager.reopenRequests.onEach { reopens++ }.launchIn(this)
         runCurrent()
-        manager.onInstallStatus(PackageInstaller.STATUS_FAILURE_CONFLICT, "Conflicts with an existing package")
+        installUntilPrompt()
+        manager.onInstallStatus(installer.lastId, PackageInstaller.STATUS_FAILURE_CONFLICT, "Conflicts with an existing package")
         runCurrent()
         assertEquals(UpdateState.InstallFailed("Conflicts with an existing package"), manager.state.value)
         assertEquals(1, reopens)
-        manager.onInstallStatus(PackageInstaller.STATUS_FAILURE, null)
+        installUntilPrompt()
+        manager.onInstallStatus(installer.lastId, PackageInstaller.STATUS_FAILURE, null)
         assertEquals(UpdateState.InstallFailed("unknown error"), manager.state.value)
         coroutineContext.cancelChildren()
     }

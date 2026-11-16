@@ -36,7 +36,12 @@ sealed interface UpdateState {
 interface InstallerPort {
     fun canInstall(): Boolean
     fun openPermissionSettings()
-    fun commit(apk: File)
+    /** Creates an install session holding [apk] and returns its id. */
+    fun createSession(apk: File): Int
+    /** Commits the session; the result arrives later through [InstallStatusReceiver]. */
+    fun commit(sessionId: Int)
+    /** Drops a session that will never be confirmed (its prompt then can't install or report into a later attempt). */
+    fun abandon(sessionId: Int)
 }
 
 /**
@@ -68,6 +73,8 @@ class UpdateManager(
     private var checking = false
     private var leftFromUpdatePage = false
     private var apkFile: File? = null
+    /** The session whose result the page waits for; results from any other session are ignored. */
+    private var session: Int? = null
 
     /** First check after a short delay, then every six hours while the app runs. */
     fun start() {
@@ -82,15 +89,21 @@ class UpdateManager(
 
     /** Called on every Home resume (also after the TV wakes): the reopen rule plus a due check. */
     fun onHomeResumed() {
-        // Home only resumes once the confirm prompt is gone (the prompt pauses it). Still Installing here means it was
-        // left with Home: Android sends no result for that, so give the button back; a late result still wins. The user
-        // chose Home, so no reopen.
-        if (_state.value == UpdateState.Installing) {
-            leftFromUpdatePage = false
-            deleteApk()
-            _state.value = UpdateState.Cancelled
+        // Home only resumes once the confirm prompt is gone (the prompt pauses it). Cancel/Back send their result right
+        // after; still Installing a moment later means the prompt was left with Home, which sends none. Then drop that
+        // session and give the button back, without a reopen (the user chose Home).
+        val waiting = session
+        if (_state.value == UpdateState.Installing && waiting != null) {
+            scope.launch {
+                delay(PROMPT_RESULT_GRACE_MS)
+                if (session != waiting || _state.value != UpdateState.Installing) return@launch
+                leftFromUpdatePage = false
+                abandonSession()
+                deleteApk()
+                _state.value = UpdateState.Cancelled
+            }
         }
-        if (leftFromUpdatePage) {
+        if (leftFromUpdatePage && _state.value != UpdateState.Installing) {
             leftFromUpdatePage = false
             if (_state.value == UpdateState.NeedsPermission && installer.canInstall()) {
                 _state.value = UpdateState.Idle
@@ -150,12 +163,17 @@ class UpdateManager(
         closeCc()
         // Backup for a cancel/failure result that arrives while no host is collecting reopenRequests.
         leftFromUpdatePage = true
+        abandonSession() // normally none left; never let two sessions report into one page
         try {
-            withContext(Dispatchers.IO) { installer.commit(file) }
+            val id = withContext(Dispatchers.IO) { installer.createSession(file) }
+            session = id
+            // Before the commit, so a quick result can't be overwritten by a late "Installing".
             _state.value = UpdateState.Installing
+            withContext(Dispatchers.IO) { installer.commit(id) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            abandonSession()
             finishFailed(e.message ?: "unknown error")
         }
     }
@@ -166,10 +184,15 @@ class UpdateManager(
         installer.openPermissionSettings()
     }
 
-    /** Result from [InstallStatusReceiver]; PENDING_USER_ACTION is handled there (it launches the prompt). */
-    fun onInstallStatus(status: Int, message: String?) {
+    /**
+     * Result from [InstallStatusReceiver]; PENDING_USER_ACTION is handled there (it launches the prompt). Only the
+     * current session counts: a late result from an abandoned one must not touch a newer attempt.
+     */
+    fun onInstallStatus(sessionId: Int, status: Int, message: String?) {
+        if (sessionId != session || status == PackageInstaller.STATUS_PENDING_USER_ACTION) return
+        // A cancelled session stays open in Android (its prompt could be confirmed later); close it for good.
+        if (status == PackageInstaller.STATUS_FAILURE_ABORTED) abandonSession() else session = null
         when (status) {
-            PackageInstaller.STATUS_PENDING_USER_ACTION -> Unit
             PackageInstaller.STATUS_SUCCESS -> {
                 leftFromUpdatePage = false
                 deleteApk()
@@ -200,6 +223,16 @@ class UpdateManager(
         }
     }
 
+    companion object {
+        /** How long a resumed Home waits for the prompt's own result before treating the prompt as left with Home. */
+        internal const val PROMPT_RESULT_GRACE_MS = 2_000L
+    }
+
+    private fun abandonSession() {
+        session?.let { id -> runCatching { installer.abandon(id) } }
+        session = null
+    }
+
     private fun deleteApk() {
         apkFile?.delete()
         apkFile = null
@@ -219,21 +252,34 @@ class AndroidInstaller(private val app: Application) : InstallerPort {
         app.startActivity(intent)
     }
 
-    override fun commit(apk: File) {
+    override fun createSession(apk: File): Int {
         val installer = app.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         val id = installer.createSession(params)
-        installer.openSession(id).use { session ->
-            apk.inputStream().use { input ->
-                session.openWrite("NemuiTV.apk", 0, apk.length()).use { out ->
-                    input.copyTo(out)
-                    session.fsync(out)
+        try {
+            installer.openSession(id).use { session ->
+                apk.inputStream().use { input ->
+                    session.openWrite("NemuiTV.apk", 0, apk.length()).use { out ->
+                        input.copyTo(out)
+                        session.fsync(out)
+                    }
                 }
             }
+        } catch (e: Exception) {
+            runCatching { installer.abandonSession(id) }
+            throw e
+        }
+        return id
+    }
+
+    override fun abandon(sessionId: Int) = app.packageManager.packageInstaller.abandonSession(sessionId)
+
+    override fun commit(sessionId: Int) {
+        app.packageManager.packageInstaller.openSession(sessionId).use { session ->
             val callback = Intent(app, InstallStatusReceiver::class.java).setPackage(app.packageName)
             // Mutable: the system fills in the status extras.
             val pending = PendingIntent.getBroadcast(
-                app, id, callback, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+                app, sessionId, callback, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
             )
             session.commit(pending.intentSender)
         }

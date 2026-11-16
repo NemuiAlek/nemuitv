@@ -16,6 +16,9 @@ class InstallStatusReceiver : BroadcastReceiver() {
             confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)?.let(context::startActivity)
             return
         }
-        context.core.update.onInstallStatus(status, intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE))
+        context.core.update.onInstallStatus(
+            intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1), status,
+            intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE),
+        )
     }
 }
