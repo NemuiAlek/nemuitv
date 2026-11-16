@@ -40,9 +40,11 @@ class UpdateManagerTest {
         override fun canInstall() = allowed
         override fun openPermissionSettings() { log += "settings" }
         @Volatile var lastId = 0
-        override fun createSession(apk: File) = ++lastId
+        val open = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
+        override fun createSession(apk: File) = (++lastId).also { open += it }
         override fun commit(sessionId: Int) { log += "commit" }
-        override fun abandon(sessionId: Int) { log += "abandon $sessionId" }
+        override fun abandon(sessionId: Int) { log += "abandon $sessionId"; open -= sessionId }
+        override fun isSessionOpen(sessionId: Int) = sessionId in open
     }
 
     private val apk = ByteArray(10_000) { (it % 251).toByte() }
@@ -246,40 +248,103 @@ class UpdateManagerTest {
         coroutineContext.cancelChildren()
     }
 
-    @Test fun homeFromThePromptGivesTheButtonBackWithoutReopening() = runT {
+    private var prompts = 0
+
+    /** Install up to Android's confirm prompt (PENDING_USER_ACTION shows it); returns the session id. */
+    private fun installToPrompt(): Int {
+        manager.onInstallPressed()
+        awaitUntil("installing") { manager.state.value == UpdateState.Installing }
+        val id = installer.lastId
+        manager.onConfirmNeeded(id) { prompts++ }
+        return id
+    }
+
+    /** Home resumes with the prompt gone and no result: after the grace the page is plain Install again. */
+    private fun TestScope.homeOut() {
+        manager.onHomeResumed(); runCurrent()
+        assertEquals(UpdateState.Installing, manager.state.value) // still waiting for a Cancel/Back result
+        advanceTimeBy(UpdateManager.PROMPT_RESULT_GRACE_MS + 1); runCurrent()
+    }
+
+    @Test fun homeOutGivesPlainInstallWithoutReopenOrAbandon() = runT {
         primeAvailable()
         var reopens = 0
         manager.reopenRequests.onEach { reopens++ }.launchIn(this)
         runCurrent()
+        installToPrompt()
+        homeOut()
+        assertEquals(UpdateState.Idle, manager.state.value) // no "Cancelled": the user just left
+        assertEquals(0, reopens)
+        assertTrue(installer.log.none { it.startsWith("abandon") })
+        coroutineContext.cancelChildren()
+    }
+
+    @Test fun confirmedInstallStillVerifyingIsNeverAbandoned() = runT {
+        primeAvailable()
+        val id = installToPrompt()
+        // User pressed Install on the prompt: it closes, Home resumes, the install runs longer than the grace.
+        homeOut()
+        advanceTimeBy(60_000); runCurrent()
+        assertTrue(installer.log.none { it.startsWith("abandon") })
+        assertTrue(id in installer.open)
+        manager.onInstallStatus(id, PackageInstaller.STATUS_SUCCESS, null)
+        assertEquals(UpdateState.Idle, manager.state.value)
+    }
+
+    @Test fun installAfterHomeOutShowsTheSamePromptAgain() = runT {
+        primeAvailable()
+        val id = installToPrompt()
+        homeOut()
         manager.onInstallPressed()
-        awaitUntil("installing") { manager.state.value == UpdateState.Installing }
-        val first = installer.lastId
-        // Home on the confirm prompt: Android sends no result, Home just resumes.
-        manager.onHomeResumed(); runCurrent()
-        assertEquals(UpdateState.Installing, manager.state.value) // still waiting for a Cancel/Back result
-        advanceTimeBy(UpdateManager.PROMPT_RESULT_GRACE_MS + 1); runCurrent()
-        assertEquals(UpdateState.Cancelled, manager.state.value)
-        assertTrue(installer.log.contains("abandon $first"))
-        assertEquals(0, reopens)
-        manager.onHomeResumed(); runCurrent()
-        assertEquals(0, reopens)
-        // Second attempt: a late result from the abandoned first session must not touch it.
+        assertEquals(UpdateState.Installing, manager.state.value)
+        assertEquals(2, prompts)
+        runCurrent(); Thread.sleep(100); runCurrent()
+        assertEquals(1, count("/apk"))
+        assertEquals(1, installer.log.count { it == "commit" })
+        assertEquals(id, installer.lastId)
+        manager.onInstallStatus(id, PackageInstaller.STATUS_SUCCESS, null)
+        assertEquals(UpdateState.Idle, manager.state.value)
+    }
+
+    @Test fun installAfterHomeOutWithSessionGoneStartsFresh() = runT {
+        primeAvailable()
+        val first = installToPrompt()
+        homeOut()
+        installer.open -= first // e.g. Android dropped it
         manager.onInstallPressed()
         assertEquals(UpdateState.Downloading(0), manager.state.value)
+        // A late result from the old session can't touch the new attempt.
         manager.onInstallStatus(first, PackageInstaller.STATUS_FAILURE_ABORTED, null)
         assertTrue(manager.state.value is UpdateState.Downloading)
         awaitUntil("installing again") { manager.state.value == UpdateState.Installing }
-        manager.onInstallStatus(first, PackageInstaller.STATUS_FAILURE_ABORTED, null)
-        runCurrent()
-        assertEquals(UpdateState.Installing, manager.state.value)
-        assertEquals(0, reopens)
         assertEquals(2, installer.log.count { it == "commit" })
-        // The current session's result still lands.
-        manager.onInstallStatus(installer.lastId, PackageInstaller.STATUS_FAILURE_ABORTED, null)
+        assertEquals(first + 1, installer.lastId)
+        manager.onInstallStatus(first, PackageInstaller.STATUS_FAILURE_ABORTED, null)
+        assertEquals(UpdateState.Installing, manager.state.value)
+    }
+
+    @Test fun lateCancelAfterHomeOutStillReopens() = runT {
+        primeAvailable()
+        var reopens = 0
+        manager.reopenRequests.onEach { reopens++ }.launchIn(this)
+        runCurrent()
+        val id = installToPrompt()
+        homeOut()
+        manager.onInstallStatus(id, PackageInstaller.STATUS_FAILURE_ABORTED, null)
         runCurrent()
         assertEquals(UpdateState.Cancelled, manager.state.value)
         assertEquals(1, reopens)
+        assertEquals(listOf("abandon $id"), installer.log.filter { it.startsWith("abandon") })
         coroutineContext.cancelChildren()
+    }
+
+    @Test fun missingConfirmPromptFailsInsteadOfHanging() = runT {
+        primeAvailable()
+        manager.onInstallPressed()
+        awaitUntil("installing") { manager.state.value == UpdateState.Installing }
+        manager.onConfirmNeeded(installer.lastId, null)
+        assertEquals(UpdateState.InstallFailed("no install prompt"), manager.state.value)
+        assertTrue(installer.log.contains("abandon ${installer.lastId}"))
     }
 
     @Test fun backResultAfterHomeResumeStillReopensAndAbandonsOnce() = runT {

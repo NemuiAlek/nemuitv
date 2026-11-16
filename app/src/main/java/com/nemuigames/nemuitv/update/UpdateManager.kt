@@ -42,6 +42,8 @@ interface InstallerPort {
     fun commit(sessionId: Int)
     /** Drops a session that will never be confirmed (its prompt then can't install or report into a later attempt). */
     fun abandon(sessionId: Int)
+    /** Whether Android still has the session (false once it installed, failed or was abandoned). */
+    fun isSessionOpen(sessionId: Int): Boolean
 }
 
 /**
@@ -75,6 +77,8 @@ class UpdateManager(
     private var apkFile: File? = null
     /** The session whose result the page waits for; results from any other session are ignored. */
     private var session: Int? = null
+    /** Shows [session]'s confirm prompt (from its PENDING_USER_ACTION); kept so a prompt left with Home can come back. */
+    private var showConfirm: (() -> Unit)? = null
 
     /** First check after a short delay, then every six hours while the app runs. */
     fun start() {
@@ -89,18 +93,17 @@ class UpdateManager(
 
     /** Called on every Home resume (also after the TV wakes): the reopen rule plus a due check. */
     fun onHomeResumed() {
-        // Home only resumes once the confirm prompt is gone (the prompt pauses it). Cancel/Back send their result right
-        // after; still Installing a moment later means the prompt was left with Home, which sends none. Then drop that
-        // session and give the button back, without a reopen (the user chose Home).
+        // Home resumes once the confirm prompt is gone. Cancel/Back send their result right after; Home on the prompt
+        // sends none, and neither does a confirmed install still being verified (it ends with SUCCESS, which restarts the
+        // app). So after a short wait the button comes back as plain Install, with no message and no reopen (the user
+        // chose Home), and the session is kept: Install shows its prompt again, and a late result still counts.
         val waiting = session
         if (_state.value == UpdateState.Installing && waiting != null) {
             scope.launch {
                 delay(PROMPT_RESULT_GRACE_MS)
                 if (session != waiting || _state.value != UpdateState.Installing) return@launch
                 leftFromUpdatePage = false
-                abandonSession()
-                deleteApk()
-                _state.value = UpdateState.Cancelled
+                _state.value = UpdateState.Idle
             }
         }
         if (leftFromUpdatePage && _state.value != UpdateState.Installing) {
@@ -143,6 +146,21 @@ class UpdateManager(
             is UpdateState.Downloading, UpdateState.Installing -> return
             else -> Unit
         }
+        val waiting = session
+        if (waiting != null) {
+            val confirm = showConfirm
+            if (confirm != null && installer.isSessionOpen(waiting)) {
+                // The prompt was left with Home: show that same prompt again, no new download or session.
+                closeCc()
+                leftFromUpdatePage = true
+                _state.value = UpdateState.Installing
+                launchConfirm(confirm)
+                return
+            }
+            // Android no longer has it (installed, failed or dropped elsewhere): start over.
+            session = null
+            showConfirm = null
+        }
         if (!installer.canInstall()) {
             _state.value = UpdateState.NeedsPermission
             return
@@ -163,7 +181,6 @@ class UpdateManager(
         closeCc()
         // Backup for a cancel/failure result that arrives while no host is collecting reopenRequests.
         leftFromUpdatePage = true
-        abandonSession() // normally none left; never let two sessions report into one page
         try {
             val id = withContext(Dispatchers.IO) { installer.createSession(file) }
             session = id
@@ -185,13 +202,39 @@ class UpdateManager(
     }
 
     /**
-     * Result from [InstallStatusReceiver]; PENDING_USER_ACTION is handled there (it launches the prompt). Only the
-     * current session counts: a late result from an abandoned one must not touch a newer attempt.
+     * PENDING_USER_ACTION from [InstallStatusReceiver]: [show] starts the confirm prompt (null if Android sent none).
+     * Only for the current session; it is kept for Install after a Home-out.
+     */
+    fun onConfirmNeeded(sessionId: Int, show: (() -> Unit)?) {
+        if (sessionId != session) return
+        if (show == null) {
+            abandonSession()
+            finishFailed("no install prompt")
+            return
+        }
+        showConfirm = show
+        launchConfirm(show)
+    }
+
+    private fun launchConfirm(show: () -> Unit) {
+        try {
+            show()
+        } catch (e: Exception) {
+            abandonSession()
+            finishFailed(e.message ?: "couldn't show the install prompt")
+        }
+    }
+
+    /**
+     * Final result from [InstallStatusReceiver]. Only the current session counts: a late result from an earlier
+     * attempt must not touch a newer one.
      */
     fun onInstallStatus(sessionId: Int, status: Int, message: String?) {
         if (sessionId != session || status == PackageInstaller.STATUS_PENDING_USER_ACTION) return
-        // A cancelled session stays open in Android (its prompt could be confirmed later); close it for good.
+        // A cancelled session stays open in Android (its prompt could be confirmed later); close it for good. A failed
+        // one is already gone.
         if (status == PackageInstaller.STATUS_FAILURE_ABORTED) abandonSession() else session = null
+        showConfirm = null
         when (status) {
             PackageInstaller.STATUS_SUCCESS -> {
                 leftFromUpdatePage = false
@@ -228,9 +271,11 @@ class UpdateManager(
         internal const val PROMPT_RESULT_GRACE_MS = 2_000L
     }
 
+    /** Only for a session that is over (cancelled, failed to commit, or no prompt); never from a timer. */
     private fun abandonSession() {
         session?.let { id -> runCatching { installer.abandon(id) } }
         session = null
+        showConfirm = null
     }
 
     private fun deleteApk() {
@@ -273,6 +318,9 @@ class AndroidInstaller(private val app: Application) : InstallerPort {
     }
 
     override fun abandon(sessionId: Int) = app.packageManager.packageInstaller.abandonSession(sessionId)
+
+    override fun isSessionOpen(sessionId: Int): Boolean =
+        app.packageManager.packageInstaller.getSessionInfo(sessionId) != null
 
     override fun commit(sessionId: Int) {
         app.packageManager.packageInstaller.openSession(sessionId).use { session ->

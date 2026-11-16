@@ -10,14 +10,16 @@ import com.nemuigames.nemuitv.core.core
 class InstallStatusReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
         if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
             @Suppress("DEPRECATION")
-            val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
-            confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)?.let(context::startActivity)
+            val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val app = context.applicationContext
+            context.core.update.onConfirmNeeded(sessionId, confirm?.let { { app.startActivity(it) } })
             return
         }
         context.core.update.onInstallStatus(
-            intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1), status,
+            sessionId, status,
             intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE),
         )
     }
