@@ -73,6 +73,9 @@ if (($sc -ceq $Dream) -or ($sc -ceq $DreamFull)) {
     Write-Host "Screensaver: wasn't NemuiTV, left alone."
 }
 
+# Updates from the TV (setup allowed NemuiTV to install them). Never fatal, like setup's step.
+if (Test-Pkg $Pkg) { [void](Invoke-Adb @('shell', 'appops', 'set', $Pkg, 'REQUEST_INSTALL_PACKAGES', 'default')) }
+
 if (Test-Pkg $Pkg) {
     $ans = ''
     try { $ans = Read-Host 'Also uninstall NemuiTV? (y/N)' } catch { $ans = '' }

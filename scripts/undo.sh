@@ -58,6 +58,9 @@ else
   echo "Screensaver: wasn't NemuiTV, left alone."
 fi
 
+# Updates from the TV (setup allowed NemuiTV to install them). Never fatal, like setup's step.
+if has_pkg "$PKG"; then "${ADB[@]}" shell appops set "$PKG" REQUEST_INSTALL_PACKAGES default </dev/null >/dev/null 2>&1 || true; fi
+
 if has_pkg "$PKG"; then
   read -r -p "Also uninstall NemuiTV? (y/N) " ans || ans=""
   case "$ans" in

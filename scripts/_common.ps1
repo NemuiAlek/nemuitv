@@ -201,7 +201,6 @@ function Shq {
     return "'" + $s.Replace("'", "'\''") + "'"
 }
 
-# Run an adb push quietly, but show adb's own error text if it fails.
 # Lets NemuiTV install its own updates (Android still asks before every install). Never fatal: on failure it says so
 # and returns $false, and setup carries on. Same output check as Invoke-Run, since appops can print an error and exit 0.
 function Grant-InstallPermission {
@@ -215,6 +214,7 @@ function Grant-InstallPermission {
     return $false
 }
 
+# Run an adb push quietly, but show adb's own error text if it fails.
 function Invoke-AdbPush {
     param([string]$Src, [string]$Dst)
     $out = Invoke-Adb @('push', $Src, $Dst)
