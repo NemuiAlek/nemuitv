@@ -80,7 +80,9 @@ fun LauncherSettingsPage(
     val update by core.update.available.collectAsStateWithLifecycle()
     val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?" }
     val takeoverOn = remember { takeoverEnabled(context) }
-    fun focusIf(page: CcPage) = if (page == (cameFrom ?: CcPage.WALLPAPER_SETTINGS)) Modifier.focusRequester(focus) else Modifier
+    // Back from the Update page after its row vanished (the release was pulled): the first row takes focus instead.
+    val focusPage = cameFrom?.takeUnless { it == CcPage.UPDATE && update == null } ?: CcPage.WALLPAPER_SETTINGS
+    fun focusIf(page: CcPage) = if (page == focusPage) Modifier.focusRequester(focus) else Modifier
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         PageTitle("Launcher settings")

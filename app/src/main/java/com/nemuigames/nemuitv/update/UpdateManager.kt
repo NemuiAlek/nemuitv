@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.provider.Settings
+import com.nemuigames.nemuitv.HomeActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,6 +45,8 @@ interface InstallerPort {
     fun abandon(sessionId: Int)
     /** Whether Android still has the session (false once it installed, failed or was abandoned). */
     fun isSessionOpen(sessionId: Int): Boolean
+    /** Drops every session this app still has open: a fresh process never resumes one, so they are leftovers. */
+    fun abandonOwnSessions()
 }
 
 /**
@@ -73,15 +76,30 @@ class UpdateManager(
 
     private var lastSuccessMs: Long? = null
     private var checking = false
-    private var leftFromUpdatePage = false
+    /**
+     * When the user last left from the Update page (Settings, the install prompt, or a result no host saw), or null.
+     * Resume reopens the page only while this is recent, so a stale flag can't pop the page up hours later.
+     */
+    private var leftAtMs: Long? = null
+    /** When a prompt left with Home was reset to plain Install; a late Cancel soon after still reopens the page. */
+    private var homeOutAtMs: Long? = null
+    /** When "Allow installs first" opened Settings; see [SETTINGS_SETTLE_MS]. */
+    private var settingsOpenedAtMs: Long? = null
     private var apkFile: File? = null
     /** The session whose result the page waits for; results from any other session are ignored. */
     private var session: Int? = null
     /** Shows [session]'s confirm prompt (from its PENDING_USER_ACTION); kept so a prompt left with Home can come back. */
     private var showConfirm: (() -> Unit)? = null
 
-    /** First check after a short delay, then every six hours while the app runs. */
+    /**
+     * Clears what an earlier process left behind (an APK whose install restarted the app before it could delete it,
+     * sessions nobody will confirm), then checks after a short delay and every six hours while the app runs.
+     */
     fun start() {
+        scope.launch(Dispatchers.IO) {
+            runCatching { cacheDir.listFiles()?.forEach { it.deleteRecursively() } }
+            runCatching { installer.abandonOwnSessions() }
+        }
         scope.launch {
             delay(UpdateSchedule.FIRST_DELAY_MS)
             while (true) {
@@ -102,16 +120,22 @@ class UpdateManager(
             scope.launch {
                 delay(PROMPT_RESULT_GRACE_MS)
                 if (session != waiting || _state.value != UpdateState.Installing) return@launch
-                leftFromUpdatePage = false
+                leftAtMs = null
+                homeOutAtMs = clock()
                 _state.value = UpdateState.Idle
             }
         }
-        if (leftFromUpdatePage && _state.value != UpdateState.Installing) {
-            leftFromUpdatePage = false
+        val leftAt = leftAtMs
+        // Opening Settings brings home to the front for a moment first (so Back lands there): that resume isn't a return.
+        val settingsJustOpened = settingsOpenedAtMs?.let { clock() - it < SETTINGS_SETTLE_MS } == true
+        if (leftAt != null && _state.value != UpdateState.Installing && !settingsJustOpened) {
+            settingsOpenedAtMs = null
+            leftAtMs = null
             if (_state.value == UpdateState.NeedsPermission && installer.canInstall()) {
                 _state.value = UpdateState.Idle
             }
-            _reopen.tryEmit(Unit)
+            // Left long ago (e.g. Back from Settings went to another app): just drop the flag, no surprise page.
+            if (clock() - leftAt <= REOPEN_WINDOW_MS) _reopen.tryEmit(Unit)
         }
         scope.launch { checkIfDue() }
     }
@@ -152,7 +176,8 @@ class UpdateManager(
             if (confirm != null && installer.isSessionOpen(waiting)) {
                 // The prompt was left with Home: show that same prompt again, no new download or session.
                 closeCc()
-                leftFromUpdatePage = true
+                leftAtMs = clock()
+                homeOutAtMs = null
                 _state.value = UpdateState.Installing
                 launchConfirm(confirm)
                 return
@@ -161,6 +186,7 @@ class UpdateManager(
             session = null
             showConfirm = null
         }
+        homeOutAtMs = null
         if (!installer.canInstall()) {
             _state.value = UpdateState.NeedsPermission
             return
@@ -180,7 +206,7 @@ class UpdateManager(
         apkFile = file
         closeCc()
         // Backup for a cancel/failure result that arrives while no host is collecting reopenRequests.
-        leftFromUpdatePage = true
+        leftAtMs = clock()
         try {
             val id = withContext(Dispatchers.IO) { installer.createSession(file) }
             session = id
@@ -196,7 +222,8 @@ class UpdateManager(
     }
 
     fun onAllowPressed() {
-        leftFromUpdatePage = true
+        leftAtMs = clock()
+        settingsOpenedAtMs = leftAtMs
         closeCc()
         installer.openPermissionSettings()
     }
@@ -237,14 +264,18 @@ class UpdateManager(
         showConfirm = null
         when (status) {
             PackageInstaller.STATUS_SUCCESS -> {
-                leftFromUpdatePage = false
+                leftAtMs = null
                 deleteApk()
                 _state.value = UpdateState.Idle
             }
             PackageInstaller.STATUS_FAILURE_ABORTED -> {
                 deleteApk()
                 _state.value = UpdateState.Cancelled
-                requestReopen()
+                val homeOutAt = homeOutAtMs
+                homeOutAtMs = null
+                // After a Home-out the user may be in another app by now: reopen only right after it, else stay quiet.
+                if (homeOutAt != null && clock() - homeOutAt > LATE_CANCEL_REOPEN_MS) leftAtMs = null
+                else requestReopen()
             }
             else -> finishFailed(message ?: "unknown error")
         }
@@ -259,16 +290,25 @@ class UpdateManager(
     /** Emits live if a host is listening (and clears the backup flag so resume doesn't reopen twice); else leaves the flag for the next resume. */
     private fun requestReopen() {
         if (_reopen.subscriptionCount.value > 0) {
-            leftFromUpdatePage = false
+            leftAtMs = null
             _reopen.tryEmit(Unit)
         } else {
-            leftFromUpdatePage = true
+            leftAtMs = clock()
         }
     }
 
     companion object {
         /** How long a resumed Home waits for the prompt's own result before treating the prompt as left with Home. */
         internal const val PROMPT_RESULT_GRACE_MS = 2_000L
+        /**
+         * Resumes this soon after "Allow installs first" are home passing through on its way behind Settings, not the
+         * user coming back (nobody leaves Settings that fast).
+         */
+        internal const val SETTINGS_SETTLE_MS = 1_500L
+        /** How long after leaving the Update page a Home resume still reopens it. */
+        internal const val REOPEN_WINDOW_MS = 5 * 60_000L
+        /** How long after a Home-out reset a late Cancel from that prompt still reopens the page. */
+        internal const val LATE_CANCEL_REOPEN_MS = 10_000L
     }
 
     /** Only for a session that is over (cancelled, failed to commit, or no prompt); never from a timer. */
@@ -294,12 +334,22 @@ class AndroidInstaller(private val app: Application) : InstallerPort {
         // Some TV firmwares have no per-app screen; the general Settings app is the fallback.
         val intent = if (perApp.resolveActivity(app.packageManager) != null) perApp
         else Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        app.startActivity(intent)
+        // NemuiTV home goes in front first (the panel may have been over another app), so Back from Settings lands
+        // on home, whose resume reopens the Update page.
+        val home = Intent(app, HomeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        app.startActivities(arrayOf(home, intent))
+    }
+
+    override fun abandonOwnSessions() {
+        val installer = app.packageManager.packageInstaller
+        installer.mySessions.forEach { runCatching { installer.abandonSession(it.sessionId) } }
     }
 
     override fun createSession(apk: File): Int {
         val installer = app.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        // Always Android's confirm prompt, even where the system could skip it for an app updating itself.
+        params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
         val id = installer.createSession(params)
         try {
             installer.openSession(id).use { session ->

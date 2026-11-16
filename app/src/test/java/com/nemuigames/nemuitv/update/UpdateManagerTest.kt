@@ -45,6 +45,7 @@ class UpdateManagerTest {
         override fun commit(sessionId: Int) { log += "commit" }
         override fun abandon(sessionId: Int) { log += "abandon $sessionId"; open -= sessionId }
         override fun isSessionOpen(sessionId: Int) = sessionId in open
+        override fun abandonOwnSessions() { log += "abandon own" }
     }
 
     private val apk = ByteArray(10_000) { (it % 251).toByte() }
@@ -88,8 +89,9 @@ class UpdateManagerTest {
     private var now = 1_000L
     private var closes = 0
     private val net = UpdateNet(OkHttpClient(), server.url("/").toString().trimEnd('/'))
+    private val cacheDir by lazy { tmp.newFolder("cache") }
     private val manager by lazy { UpdateManager(
-        scope, net, installer, "1.2.0", tmp.newFolder("cache"), { now },
+        scope, net, installer, "1.2.0", cacheDir, { now },
         closeCc = { closes++; installer.log += "close" },
     ) }
 
@@ -124,6 +126,13 @@ class UpdateManagerTest {
         advanceTimeBy(1)
         awaitUntil("available") { manager.available.value != null }
         assertEquals("1.2.1", manager.available.value!!.versionText)
+    }
+
+    @Test fun startClearsLeftoversFromAnEarlierProcess() = runT {
+        val leftover = File(cacheDir, "NemuiTV-1.2.1.apk").apply { writeBytes(apk) }
+        manager.start()
+        awaitUntil("leftovers cleared") { !leftover.exists() && "abandon own" in installer.log }
+        assertTrue(cacheDir.isDirectory)
     }
 
     @Test fun failedCheckRetriesOnNextResume() = runT {
@@ -166,13 +175,50 @@ class UpdateManagerTest {
         assertEquals(UpdateState.NeedsPermission, manager.state.value)
         manager.onAllowPressed()
         assertEquals(listOf("close", "settings"), installer.log)
+        // Home passes through the front on its way behind Settings: not a return yet.
+        manager.onHomeResumed(); runCurrent()
+        assertEquals(0, reopens)
         installer.allowed = true
+        now += UpdateManager.SETTINGS_SETTLE_MS
         manager.onHomeResumed()
         runCurrent()
         assertEquals(UpdateState.Idle, manager.state.value)
         assertEquals(1, reopens)
         manager.onHomeResumed()
         runCurrent()
+        assertEquals(1, reopens)
+        coroutineContext.cancelChildren()
+    }
+
+    @Test fun resumeLongAfterLeavingForSettingsDoesNotReopen() = runT {
+        primeAvailable()
+        var reopens = 0
+        manager.reopenRequests.onEach { reopens++ }.launchIn(this)
+        runCurrent()
+        installer.allowed = false
+        manager.onInstallPressed()
+        manager.onAllowPressed()
+        // Back from Settings went to another app; Home is pressed hours later.
+        now += UpdateManager.REOPEN_WINDOW_MS + 1
+        manager.onHomeResumed(); runCurrent()
+        assertEquals(0, reopens)
+        // The flag is gone for good, not just skipped once.
+        manager.onHomeResumed(); runCurrent()
+        assertEquals(0, reopens)
+        coroutineContext.cancelChildren()
+    }
+
+    @Test fun resumeWithinTheWindowAfterLeavingForSettingsReopens() = runT {
+        primeAvailable()
+        var reopens = 0
+        manager.reopenRequests.onEach { reopens++ }.launchIn(this)
+        runCurrent()
+        installer.allowed = false
+        manager.onInstallPressed()
+        manager.onAllowPressed()
+        manager.onHomeResumed(); runCurrent() // home passing through behind Settings
+        now += UpdateManager.REOPEN_WINDOW_MS
+        manager.onHomeResumed(); runCurrent()
         assertEquals(1, reopens)
         coroutineContext.cancelChildren()
     }
@@ -323,18 +369,52 @@ class UpdateManagerTest {
         assertEquals(UpdateState.Installing, manager.state.value)
     }
 
-    @Test fun lateCancelAfterHomeOutStillReopens() = runT {
+    @Test fun lateCancelSoonAfterHomeOutStillReopens() = runT {
         primeAvailable()
         var reopens = 0
         manager.reopenRequests.onEach { reopens++ }.launchIn(this)
         runCurrent()
         val id = installToPrompt()
         homeOut()
+        now += UpdateManager.LATE_CANCEL_REOPEN_MS
         manager.onInstallStatus(id, PackageInstaller.STATUS_FAILURE_ABORTED, null)
         runCurrent()
         assertEquals(UpdateState.Cancelled, manager.state.value)
         assertEquals(1, reopens)
         assertEquals(listOf("abandon $id"), installer.log.filter { it.startsWith("abandon") })
+        coroutineContext.cancelChildren()
+    }
+
+    @Test fun lateCancelLongAfterHomeOutIsQuiet() = runT {
+        primeAvailable()
+        var reopens = 0
+        manager.reopenRequests.onEach { reopens++ }.launchIn(this)
+        runCurrent()
+        val id = installToPrompt()
+        homeOut()
+        now += UpdateManager.LATE_CANCEL_REOPEN_MS + 1
+        manager.onInstallStatus(id, PackageInstaller.STATUS_FAILURE_ABORTED, null)
+        runCurrent()
+        assertEquals(UpdateState.Cancelled, manager.state.value)
+        assertEquals(0, reopens)
+        assertEquals(listOf("abandon $id"), installer.log.filter { it.startsWith("abandon") })
+        // Nothing left over for a later resume either.
+        manager.onHomeResumed(); runCurrent()
+        assertEquals(0, reopens)
+        coroutineContext.cancelChildren()
+    }
+
+    @Test fun lateCancelLongAfterHomeOutWithNoHostIsNotDeliveredOnResume() = runT {
+        primeAvailable()
+        val id = installToPrompt()
+        homeOut()
+        now += UpdateManager.LATE_CANCEL_REOPEN_MS + 1
+        manager.onInstallStatus(id, PackageInstaller.STATUS_FAILURE_ABORTED, null)
+        var reopens = 0
+        manager.reopenRequests.onEach { reopens++ }.launchIn(this)
+        runCurrent()
+        manager.onHomeResumed(); runCurrent()
+        assertEquals(0, reopens)
         coroutineContext.cancelChildren()
     }
 
