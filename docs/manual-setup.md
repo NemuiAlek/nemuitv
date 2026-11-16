@@ -75,6 +75,12 @@ adb shell pm grant com.nemuigames.nemuitv android.permission.WRITE_SECURE_SETTIN
 adb shell appops set com.nemuigames.nemuitv WRITE_SETTINGS allow
 ```
 
+Optional: lets NemuiTV install its own updates, so you can update from the TV later. Android still asks you before every install.
+
+```
+adb shell appops set com.nemuigames.nemuitv REQUEST_INSTALL_PACKAGES allow
+```
+
 ## 5. Turn on the Home button
 
 First read what is already enabled, so you keep other accessibility services:

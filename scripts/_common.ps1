@@ -202,6 +202,19 @@ function Shq {
 }
 
 # Run an adb push quietly, but show adb's own error text if it fails.
+# Lets NemuiTV install its own updates (Android still asks before every install). Never fatal: on failure it says so
+# and returns $false, and setup carries on. Same output check as Invoke-Run, since appops can print an error and exit 0.
+function Grant-InstallPermission {
+    Write-Host 'Letting NemuiTV install its own updates, so you can update from the TV later. Android still asks you before every install.'
+    $o = Invoke-Adb @('shell', 'appops', 'set', $Pkg, 'REQUEST_INSTALL_PACKAGES', 'allow')
+    if (($global:AdbExit -eq 0) -and ($o -notmatch 'exception|error|not allowed|unknown')) {
+        Write-Host 'Allowed: updates from the TV.'
+        return $true
+    }
+    Write-Host "Couldn't allow updates from the TV here; NemuiTV will ask you on the TV the first time you update."
+    return $false
+}
+
 function Invoke-AdbPush {
     param([string]$Src, [string]$Dst)
     $out = Invoke-Adb @('push', $Src, $Dst)

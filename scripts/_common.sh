@@ -122,6 +122,20 @@ require_device() {
 
 has_pkg() { local o; o=$("${ADB[@]}" shell pm list packages "$1" </dev/null | tr -d '\r' || true); grep -qx "package:$1" <<<"$o"; }
 
+# Lets NemuiTV install its own updates (Android still asks before every install). Never fatal: this is a convenience,
+# so on failure it says so and returns 1, and the caller carries on (call it as `grant_install_permission || true`).
+# Same output check as setup's `run`, since appops can print an error and still exit 0.
+grant_install_permission() {
+  printf '%s\n' "Letting NemuiTV install its own updates, so you can update from the TV later. Android still asks you before every install."
+  local o
+  if o=$("${ADB[@]}" shell appops set "$PKG" REQUEST_INSTALL_PACKAGES allow 2>&1 </dev/null) && ! grep -qiE 'exception|error|not allowed|unknown' <<<"$o"; then
+    printf '%s\n' "Allowed: updates from the TV."
+    return 0
+  fi
+  printf '%s\n' "Couldn't allow updates from the TV here; NemuiTV will ask you on the TV the first time you update."
+  return 1
+}
+
 # Quote a string for the device's shell, so file names with spaces, quotes, $ or backticks survive.
 shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 

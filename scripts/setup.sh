@@ -174,6 +174,7 @@ $o"; fi
 run pm grant "$PKG" android.permission.WRITE_SECURE_SETTINGS
 run appops set "$PKG" WRITE_SETTINGS allow
 say "Granted: change TV settings (for the Setup page and screensaver timers)."
+grant_install_permission || true   # optional: never stops setup
 
 # ---- 5. Home button + Now Playing (Google's home stays as it is) ----
 step 5/6 "Turning on the Home button and Now Playing"

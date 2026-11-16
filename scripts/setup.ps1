@@ -199,6 +199,7 @@ Step '4/6' 'Giving NemuiTV the permissions it needs'
 Invoke-Run @('pm', 'grant', $Pkg, 'android.permission.WRITE_SECURE_SETTINGS')
 Invoke-Run @('appops', 'set', $Pkg, 'WRITE_SETTINGS', 'allow')
 Say 'Granted: change TV settings (for the Setup page and screensaver timers).'
+[void](Grant-InstallPermission)   # optional: never stops setup
 
 # ---- 5. Home button + Now Playing (Google's home stays as it is) ----
 Step '5/6' 'Turning on the Home button and Now Playing'
