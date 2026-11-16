@@ -91,6 +91,7 @@ class HomeActivity : ComponentActivity() {
         super.onResume()
         core.homeResumed = true
         core.reapplyTimers()
+        core.update.onHomeResumed()
     }
 
     override fun onPause() {

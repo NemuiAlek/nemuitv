@@ -7,6 +7,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- Lets NemuiTV install its own updates (Android still asks before every install). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Ambient timers (screen_off_timeout / sleep_timeout); granted by scripts/setup.sh. -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
@@ -82,5 +84,8 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </service>
+        <receiver
+            android:name=".update.InstallStatusReceiver"
+            android:exported="false" />
     </application>
 </manifest>

@@ -35,6 +35,9 @@ import com.nemuigames.nemuitv.nowplaying.SPOTIFY_PKG
 import com.nemuigames.nemuitv.settings.LauncherSettings
 import com.nemuigames.nemuitv.spotify.PrefsTokenStore
 import com.nemuigames.nemuitv.spotify.SpotifyLibrary
+import com.nemuigames.nemuitv.update.AndroidInstaller
+import com.nemuigames.nemuitv.update.UpdateManager
+import com.nemuigames.nemuitv.update.UpdateNet
 import okhttp3.OkHttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -237,6 +240,17 @@ class NemuiCore(app: Application) {
     private val _closeCc = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val closeCcRequests: SharedFlow<Unit> = _closeCc.asSharedFlow()
 
+    /** In-app updates from GitHub; its state outlives the Control Center so downloads continue when it closes. */
+    val update = UpdateManager(
+        scope,
+        UpdateNet(OkHttpClient()),
+        AndroidInstaller(app),
+        app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: "?",
+        app.cacheDir.resolve("update"),
+        SystemClock::elapsedRealtime,
+        closeCc = { _closeCc.tryEmit(Unit) },
+    )
+
     /** The screensaver just started; [wasHome] = the home screen was in front. Starts lofi when the rules allow. */
     fun onAmbientStarted(wasHome: Boolean) {
         val tvOnBox = tvShowsThisBox(lastGoodTv?.entity, lastGoodTv?.thisDevice, ha.tvState.value)
@@ -259,6 +273,7 @@ class NemuiCore(app: Application) {
             .onEach { shows -> if (!shows) alerts.onTvOff() }
             .launchIn(scope)
         nowPlaying.start()
+        update.start()
         var lastDoorbell: com.nemuigames.nemuitv.alerts.DoorbellUi? = null
         alerts.ui.onEach { ui ->
             if (com.nemuigames.nemuitv.alerts.ringClosesCc(lastDoorbell, ui.doorbell)) _closeCc.tryEmit(Unit)

@@ -1,5 +1,6 @@
 package com.nemuigames.nemuitv.update
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -34,6 +35,8 @@ class UpdateNet(
             http.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) null else parseLatestRelease(resp.body?.string().orEmpty())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
@@ -79,6 +82,9 @@ class UpdateNet(
                 }
                 val hex = digest.digest().joinToString("") { "%02x".format(it) }
                 if (sha256Matches(hex, shaText)) DownloadResult.Ok(target) else mismatch(target)
+            } catch (e: CancellationException) {
+                file?.delete()
+                throw e
             } catch (e: Exception) {
                 file?.delete()
                 DownloadResult.Failed
