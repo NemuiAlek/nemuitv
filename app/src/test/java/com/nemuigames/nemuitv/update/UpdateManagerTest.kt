@@ -123,13 +123,12 @@ class UpdateManagerTest {
 
     @Test fun failedCheckRetriesOnNextResume() = runT {
         releaseCodes = ArrayDeque(listOf(500))
-        manager.onHomeResumed()
-        awaitUntil("first request") { checks == 1 }
-        runCurrent(); Thread.sleep(100); runCurrent()
-        assertNull(manager.available.value)
-        manager.onHomeResumed()
-        awaitUntil("available") { manager.available.value != null }
-        assertEquals(2, checks)
+        // Keep resuming until the retry lands: the first check may still be finishing when we resume again.
+        awaitUntil("available") {
+            manager.onHomeResumed()
+            manager.available.value != null
+        }
+        assertTrue(checks >= 2)
     }
 
     @Test fun successfulCheckNotRepeatedWithin6h() = runT {
@@ -191,10 +190,48 @@ class UpdateManagerTest {
         slowApk = true
         manager.onInstallPressed()
         awaitUntil("downloading") { manager.state.value is UpdateState.Downloading }
-        // The panel closing is just the UI going away; the manager owns the work.
-        runCurrent()
+        // A check finishing mid-download must not reset the state.
+        now += UpdateSchedule.INTERVAL_MS
+        manager.onHomeResumed()
+        awaitUntil("second check") { checks == 2 }
+        runCurrent(); Thread.sleep(100); runCurrent()
         assertTrue(manager.state.value is UpdateState.Downloading)
         awaitUntil("installing") { manager.state.value == UpdateState.Installing }
+        assertEquals(1, count("/apk"))
+    }
+
+    @Test fun missedLiveReopenIsDeliveredOnNextResumeExactlyOnce() = runT {
+        primeAvailable()
+        manager.onInstallPressed()
+        awaitUntil("installing") { manager.state.value == UpdateState.Installing }
+        // Cancel arrives while no host collects: nothing is lost.
+        manager.onInstallStatus(PackageInstaller.STATUS_FAILURE_ABORTED, null)
+        var reopens = 0
+        manager.reopenRequests.onEach { reopens++ }.launchIn(this)
+        runCurrent()
+        assertEquals(0, reopens)
+        manager.onHomeResumed(); runCurrent()
+        assertEquals(1, reopens)
+        manager.onHomeResumed(); runCurrent()
+        assertEquals(1, reopens)
+        coroutineContext.cancelChildren()
+    }
+
+    @Test fun liveReopenIsNotRepeatedOnResume() = runT {
+        primeAvailable()
+        var reopens = 0
+        manager.reopenRequests.onEach { reopens++ }.launchIn(this)
+        runCurrent()
+        manager.onInstallPressed()
+        awaitUntil("installing") { manager.state.value == UpdateState.Installing }
+        manager.onHomeResumed(); runCurrent() // prompt still covering Home: no early reopen
+        assertEquals(0, reopens)
+        manager.onInstallStatus(PackageInstaller.STATUS_FAILURE_ABORTED, null)
+        runCurrent()
+        assertEquals(1, reopens)
+        manager.onHomeResumed(); runCurrent()
+        assertEquals(1, reopens)
+        coroutineContext.cancelChildren()
     }
 
     @Test fun cancelledReopensWithCancelled() = runT {

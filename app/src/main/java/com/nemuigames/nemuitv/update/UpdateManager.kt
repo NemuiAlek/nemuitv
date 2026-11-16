@@ -82,7 +82,8 @@ class UpdateManager(
 
     /** Called on every Home resume (also after the TV wakes): the reopen rule plus a due check. */
     fun onHomeResumed() {
-        if (leftFromUpdatePage) {
+        // While Installing the confirm prompt may still be covering Home; wait for the real result.
+        if (leftFromUpdatePage && _state.value != UpdateState.Installing) {
             leftFromUpdatePage = false
             if (_state.value == UpdateState.NeedsPermission && installer.canInstall()) {
                 _state.value = UpdateState.Idle
@@ -130,6 +131,8 @@ class UpdateManager(
     private suspend fun commit(file: File) {
         apkFile = file
         closeCc()
+        // Backup for a cancel/failure result that arrives while no host is collecting reopenRequests.
+        leftFromUpdatePage = true
         try {
             withContext(Dispatchers.IO) { installer.commit(file) }
             _state.value = UpdateState.Installing
@@ -151,13 +154,14 @@ class UpdateManager(
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> Unit
             PackageInstaller.STATUS_SUCCESS -> {
+                leftFromUpdatePage = false
                 deleteApk()
                 _state.value = UpdateState.Idle
             }
             PackageInstaller.STATUS_FAILURE_ABORTED -> {
                 deleteApk()
                 _state.value = UpdateState.Cancelled
-                _reopen.tryEmit(Unit)
+                requestReopen()
             }
             else -> finishFailed(message ?: "unknown error")
         }
@@ -166,7 +170,17 @@ class UpdateManager(
     private fun finishFailed(reason: String) {
         deleteApk()
         _state.value = UpdateState.InstallFailed(reason)
-        _reopen.tryEmit(Unit)
+        requestReopen()
+    }
+
+    /** Emits live if a host is listening (and clears the backup flag so resume doesn't reopen twice); else leaves the flag for the next resume. */
+    private fun requestReopen() {
+        if (_reopen.subscriptionCount.value > 0) {
+            leftFromUpdatePage = false
+            _reopen.tryEmit(Unit)
+        } else {
+            leftFromUpdatePage = true
+        }
     }
 
     private fun deleteApk() {
