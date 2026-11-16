@@ -128,7 +128,7 @@ class UpdateManagerTest {
         assertEquals("1.2.1", manager.available.value!!.versionText)
     }
 
-    @Test fun startClearsLeftoversFromAnEarlierProcess() = runT {
+    @Test fun `start clears leftovers from an earlier process`() = runT {
         val leftover = File(cacheDir, "NemuiTV-1.2.1.apk").apply { writeBytes(apk) }
         manager.start()
         awaitUntil("leftovers cleared") { !leftover.exists() && "abandon own" in installer.log }
@@ -156,7 +156,7 @@ class UpdateManagerTest {
         awaitUntil("second check") { checks == 2 }
     }
 
-    @Test fun debugCheckNowSkipsThe6hGateAndUsesTheNewSource() = runT {
+    @Test fun `debug check now skips the 6 h gate and uses the new source`() = runT {
         primeAvailable()
         assertEquals(1, checks)
         val other = UpdateNet(OkHttpClient(), server.url("/other").toString().trimEnd('/'))
@@ -165,7 +165,7 @@ class UpdateManagerTest {
         assertEquals(1, checks)
     }
 
-    @Test fun noPermissionGoesToNeedsPermission_thenAllowAndResumeReopensAsIdle() = runT {
+    @Test fun `no permission goes to needs permission then allow and resume reopens as idle`() = runT {
         primeAvailable()
         var reopens = 0
         manager.reopenRequests.onEach { reopens++ }.launchIn(this)
@@ -190,7 +190,7 @@ class UpdateManagerTest {
         coroutineContext.cancelChildren()
     }
 
-    @Test fun resumeLongAfterLeavingForSettingsDoesNotReopen() = runT {
+    @Test fun `resume long after leaving for settings does not reopen`() = runT {
         primeAvailable()
         var reopens = 0
         manager.reopenRequests.onEach { reopens++ }.launchIn(this)
@@ -208,7 +208,7 @@ class UpdateManagerTest {
         coroutineContext.cancelChildren()
     }
 
-    @Test fun resumeWithinTheWindowAfterLeavingForSettingsReopens() = runT {
+    @Test fun `resume within the window after leaving for settings reopens`() = runT {
         primeAvailable()
         var reopens = 0
         manager.reopenRequests.onEach { reopens++ }.launchIn(this)
@@ -260,7 +260,7 @@ class UpdateManagerTest {
         assertEquals(1, count("/apk"))
     }
 
-    @Test fun missedLiveReopenIsDeliveredOnNextResumeExactlyOnce() = runT {
+    @Test fun `missed live reopen is delivered on next resume exactly once`() = runT {
         primeAvailable()
         manager.onInstallPressed()
         awaitUntil("installing") { manager.state.value == UpdateState.Installing }
@@ -312,7 +312,7 @@ class UpdateManagerTest {
         advanceTimeBy(UpdateManager.PROMPT_RESULT_GRACE_MS + 1); runCurrent()
     }
 
-    @Test fun homeOutGivesPlainInstallWithoutReopenOrAbandon() = runT {
+    @Test fun `home out gives plain install without reopen or abandon`() = runT {
         primeAvailable()
         var reopens = 0
         manager.reopenRequests.onEach { reopens++ }.launchIn(this)
@@ -325,7 +325,7 @@ class UpdateManagerTest {
         coroutineContext.cancelChildren()
     }
 
-    @Test fun confirmedInstallStillVerifyingIsNeverAbandoned() = runT {
+    @Test fun `confirmed install still verifying is never abandoned`() = runT {
         primeAvailable()
         val id = installToPrompt()
         // User pressed Install on the prompt: it closes, Home resumes, the install runs longer than the grace.
@@ -337,7 +337,7 @@ class UpdateManagerTest {
         assertEquals(UpdateState.Idle, manager.state.value)
     }
 
-    @Test fun installAfterHomeOutShowsTheSamePromptAgain() = runT {
+    @Test fun `install after home out shows the same prompt again`() = runT {
         primeAvailable()
         val id = installToPrompt()
         homeOut()
@@ -352,7 +352,7 @@ class UpdateManagerTest {
         assertEquals(UpdateState.Idle, manager.state.value)
     }
 
-    @Test fun installAfterHomeOutWithSessionGoneStartsFresh() = runT {
+    @Test fun `install after home out with session gone starts fresh`() = runT {
         primeAvailable()
         val first = installToPrompt()
         homeOut()
@@ -404,7 +404,7 @@ class UpdateManagerTest {
         coroutineContext.cancelChildren()
     }
 
-    @Test fun lateCancelLongAfterHomeOutWithNoHostIsNotDeliveredOnResume() = runT {
+    @Test fun `late cancel long after home out with no host is not delivered on resume`() = runT {
         primeAvailable()
         val id = installToPrompt()
         homeOut()
@@ -418,7 +418,7 @@ class UpdateManagerTest {
         coroutineContext.cancelChildren()
     }
 
-    @Test fun missingConfirmPromptFailsInsteadOfHanging() = runT {
+    @Test fun `missing confirm prompt fails instead of hanging`() = runT {
         primeAvailable()
         manager.onInstallPressed()
         awaitUntil("installing") { manager.state.value == UpdateState.Installing }
@@ -427,7 +427,7 @@ class UpdateManagerTest {
         assertTrue(installer.log.contains("abandon ${installer.lastId}"))
     }
 
-    @Test fun backResultAfterHomeResumeStillReopensAndAbandonsOnce() = runT {
+    @Test fun `back result after home resume still reopens and abandons once`() = runT {
         primeAvailable()
         var reopens = 0
         manager.reopenRequests.onEach { reopens++ }.launchIn(this)
