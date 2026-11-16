@@ -55,14 +55,15 @@ import com.nemuigames.nemuitv.settings.onOffLabel
 import com.nemuigames.nemuitv.settings.orderLabel
 import com.nemuigames.nemuitv.settings.statusLine
 import com.nemuigames.nemuitv.settings.unitLabel
+import com.nemuigames.nemuitv.update.UpdateCheck
 
 private const val TAKEOVER_SERVICE = "com.nemuigames.nemuitv/com.nemuigames.nemuitv.takeover.HomeTakeoverService"
 
 /**
  * The Control Center's "Launcher settings" sub-page (the gear circle): two buckets (Wallpaper ›, Screensaver ›; the list had
  * grown to 13 rows), Clock and Weather unit (OK cycles the value: applies at once, saved on the
- * TV), Wi-Fi settings (Android's page) and Advanced settings (Google's Settings; both close the panel first), then
- * read-only About. [focus] goes on the bucket we came back from ([cameFrom]), else on the first row.
+ * TV), Wi-Fi settings (Android's page) and Advanced settings (Google's Settings; both close the panel first), Check for
+ * updates (asks GitHub now), then read-only About. [focus] goes on the bucket we came back from ([cameFrom]), else on the first row.
  */
 @Composable
 fun LauncherSettingsPage(
@@ -78,6 +79,7 @@ fun LauncherSettingsPage(
     val haStatus by core.ha.status.collectAsStateWithLifecycle()
     val weatherProblem by core.ha.weatherProblem.collectAsStateWithLifecycle()
     val update by core.update.available.collectAsStateWithLifecycle()
+    val check by core.update.check.collectAsStateWithLifecycle()
     val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?" }
     val takeoverOn = remember { takeoverEnabled(context) }
     // Back from the Update page after its row vanished (the release was pulled): the first row takes focus instead.
@@ -102,6 +104,8 @@ fun LauncherSettingsPage(
             onClose()
             context.openSettings()
         }
+        // The row's own label carries the result: the panel is too narrow for "Check for updates" plus a value.
+        SettingRow(checkLabel(check), if (check == UpdateCheck.Idle) "›" else "") { core.update.checkNow() }
         Spacer(Modifier.height(2.dp))
         Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("About", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Jt.TextPrimary)
@@ -116,6 +120,13 @@ fun LauncherSettingsPage(
         // Only when a newer release is known; the one place the app announces it.
         update?.let { SettingRow("Update Available!", "${it.versionText} ›", focusIf(CcPage.UPDATE), yellow = true) { onOpen(CcPage.UPDATE) } }
     }
+}
+
+internal fun checkLabel(check: UpdateCheck) = when (check) {
+    UpdateCheck.Idle -> "Check for updates"
+    UpdateCheck.Checking -> "Checking…"
+    UpdateCheck.UpToDate -> "You're up to date"
+    UpdateCheck.Failed -> "Couldn't check"
 }
 
 /** Launcher settings › Wallpaper: order, new one on return Home, timed change. Back → Launcher settings. */

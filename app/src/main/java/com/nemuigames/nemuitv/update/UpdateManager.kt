@@ -33,6 +33,9 @@ sealed interface UpdateState {
     data class InstallFailed(val reason: String) : UpdateState
 }
 
+/** The "Check for updates" row's value: idle shows ›, a result shows for [UpdateManager.CHECK_RESULT_MS]. */
+enum class UpdateCheck { Idle, Checking, UpToDate, Failed }
+
 /** The Android side of installing, behind an interface so the manager can be tested on the JVM. */
 interface InstallerPort {
     fun canInstall(): Boolean
@@ -73,6 +76,12 @@ class UpdateManager(
     private val _reopen = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     /** Asks a Control Center host to open on the Update page. */
     val reopenRequests: SharedFlow<Unit> = _reopen.asSharedFlow()
+
+    private val _check = MutableStateFlow(UpdateCheck.Idle)
+    /** Progress of a check the user asked for with [checkNow]; background checks never change it. */
+    val check: StateFlow<UpdateCheck> = _check.asStateFlow()
+    /** Bumped by every [checkNow], so an older result's reset timer can't clear a newer result early. */
+    private var checkRun = 0
 
     private var lastSuccessMs: Long? = null
     private var checking = false
@@ -150,15 +159,43 @@ class UpdateManager(
         scope.launch { checkIfDue() }
     }
 
+    /**
+     * The "Check for updates" row: asks GitHub right away, skipping the 6 h gate. A newer release shows the
+     * Update Available! row; otherwise the row says Up to date or Couldn't check for a moment. Ignored while a
+     * check (this one or a background one) is already running.
+     */
+    fun checkNow() {
+        if (checking) return
+        val run = ++checkRun
+        _check.value = UpdateCheck.Checking
+        scope.launch {
+            val ok = runCheck()
+            _check.value = when {
+                !ok -> UpdateCheck.Failed
+                _available.value != null -> UpdateCheck.Idle
+                else -> UpdateCheck.UpToDate
+            }
+            if (_check.value == UpdateCheck.Idle) return@launch
+            delay(CHECK_RESULT_MS)
+            if (checkRun == run) _check.value = UpdateCheck.Idle
+        }
+    }
+
     private suspend fun checkIfDue() {
         if (checking || !UpdateSchedule.due(clock(), lastSuccessMs)) return
+        runCheck()
+    }
+
+    /** One GitHub check; false when it failed. */
+    private suspend fun runCheck(): Boolean {
         checking = true
         try {
             // A null result is a failure (or no release at all): the next resume tries again.
-            val latest = net.latest() ?: return
+            val latest = net.latest() ?: return false
             lastSuccessMs = clock()
             // Only touches `available`: a check landing mid-download must not reset `state`.
             _available.value = newerRelease(installedVersion, latest)
+            return true
         } finally {
             checking = false
         }
@@ -298,6 +335,8 @@ class UpdateManager(
     }
 
     companion object {
+        /** How long "Up to date" / "Couldn't check" stay on the Check for updates row. */
+        const val CHECK_RESULT_MS = 4_000L
         /** How long a resumed Home waits for the prompt's own result before treating the prompt as left with Home. */
         internal const val PROMPT_RESULT_GRACE_MS = 2_000L
         /**

@@ -53,6 +53,8 @@ class UpdateManagerTest {
     private val hits = ConcurrentHashMap<String, AtomicInteger>()
     @Volatile private var releaseCodes = ArrayDeque<Int>()
     @Volatile private var slowApk = false
+    @Volatile private var slowRelease = false
+    @Volatile private var tag = "1.2.1"
 
     private val server: MockWebServer = MockWebServer().apply {
         dispatcher = object : Dispatcher() {
@@ -62,7 +64,9 @@ class UpdateManagerTest {
                 return when {
                     path.endsWith("/releases/latest") -> {
                         val code = synchronized(this) { releaseCodes.removeFirstOrNull() ?: 200 }
-                        if (code != 200) MockResponse().setResponseCode(code) else MockResponse().setBody(releaseJson())
+                        if (code != 200) MockResponse().setResponseCode(code) else MockResponse().setBody(releaseJson()).also {
+                            if (slowRelease) it.setHeadersDelay(300, java.util.concurrent.TimeUnit.MILLISECONDS)
+                        }
                     }
                     path == "/apk" -> MockResponse().setBody(Buffer().write(apk)).also {
                         if (slowApk) it.throttleBody(2_000, 50, java.util.concurrent.TimeUnit.MILLISECONDS)
@@ -75,9 +79,9 @@ class UpdateManagerTest {
         start()
     }
 
-    private fun releaseJson(): String = """{"tag_name":"v1.2.1","body":"notes","assets":[
-        {"name":"NemuiTV-1.2.1.apk","size":${apk.size},"browser_download_url":"${server.url("/apk")}"},
-        {"name":"NemuiTV-1.2.1.apk.sha256","size":65,"browser_download_url":"${server.url("/sha")}"}]}"""
+    private fun releaseJson(): String = """{"tag_name":"v$tag","body":"notes","assets":[
+        {"name":"NemuiTV-$tag.apk","size":${apk.size},"browser_download_url":"${server.url("/apk")}"},
+        {"name":"NemuiTV-$tag.apk.sha256","size":65,"browser_download_url":"${server.url("/sha")}"}]}"""
 
     private fun count(path: String) = hits[path]?.get() ?: 0
     private val checks get() = count("/repos/NemuiAlek/nemuitv/releases/latest")
@@ -162,6 +166,49 @@ class UpdateManagerTest {
         val other = UpdateNet(OkHttpClient(), server.url("/other").toString().trimEnd('/'))
         manager.debugCheckNow(other)
         awaitUntil("check on the new source") { count("/other/repos/NemuiAlek/nemuitv/releases/latest") == 1 }
+        assertEquals(1, checks)
+    }
+
+    @Test fun `check now when up to date says so for a moment then goes back`() = runT {
+        tag = "1.2.0"
+        manager.checkNow()
+        awaitUntil("up to date") { manager.check.value == UpdateCheck.UpToDate }
+        assertNull(manager.available.value)
+        advanceTimeBy(UpdateManager.CHECK_RESULT_MS + 1)
+        assertEquals(UpdateCheck.Idle, manager.check.value)
+    }
+
+    @Test fun `check now skips the 6 h gate and shows the row`() = runT {
+        tag = "1.2.0"
+        manager.checkNow()
+        awaitUntil("up to date") { manager.check.value == UpdateCheck.UpToDate }
+        tag = "1.2.1"
+        manager.checkNow()
+        awaitUntil("row") { manager.available.value != null }
+        assertEquals(UpdateCheck.Idle, manager.check.value)
+        assertEquals(2, checks)
+        // It counts as the latest good check: a resume right after doesn't ask GitHub again.
+        manager.onHomeResumed()
+        runCurrent(); Thread.sleep(100); runCurrent()
+        assertEquals(2, checks)
+    }
+
+    @Test fun `check now failure says couldn't check and shows no row`() = runT {
+        releaseCodes = ArrayDeque(listOf(500))
+        manager.checkNow()
+        awaitUntil("failed") { manager.check.value == UpdateCheck.Failed }
+        assertNull(manager.available.value)
+        advanceTimeBy(UpdateManager.CHECK_RESULT_MS + 1)
+        assertEquals(UpdateCheck.Idle, manager.check.value)
+    }
+
+    @Test fun `pressing check twice while checking asks GitHub once`() = runT {
+        slowRelease = true
+        manager.checkNow()
+        runCurrent()
+        assertEquals(UpdateCheck.Checking, manager.check.value)
+        manager.checkNow()
+        awaitUntil("row") { manager.available.value != null }
         assertEquals(1, checks)
     }
 
