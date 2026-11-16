@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
@@ -184,17 +185,19 @@ internal fun SettingRow(label: String, value: String, modifier: Modifier = Modif
     Surface(
         onClick = { if (enabled) onClick() }, // stays focusable while disabled so Back/focus never get stuck
         // Rows were "way too large" on the couch: 30 dp rows, was 40.
-        modifier = modifier.fillMaxWidth().height(SettingRowHeight),
+        // Disabled (e.g. Downloading…) reads as dimmed but still takes focus.
+        modifier = modifier.fillMaxWidth().height(SettingRowHeight).alpha(if (enabled) 1f else 0.5f),
         shape = ClickableSurfaceDefaults.shape(shape = CcRowShape),
         colors = if (yellow) Glass.yellowColors() else Glass.colors(),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
         border = if (yellow) Glass.yellowBorder(CcRowShape) else Glass.border(CcRowShape),
         glow = Glass.glow(),
     ) {
-        Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        // The yellow row gives up 2 dp a side (and half the gap) so "Update Available!" and its version both fit the 180 dp panel.
+        Row(Modifier.fillMaxSize().padding(horizontal = if (yellow) 10.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f))
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(if (yellow) 4.dp else 8.dp))
             Text(value, fontSize = 11.sp, color = LocalContentColor.current.copy(alpha = 0.75f), maxLines = 1)
         }
     }

@@ -46,7 +46,7 @@ interface InstallerPort {
  */
 class UpdateManager(
     private val scope: CoroutineScope,
-    private val net: UpdateNet,
+    private var net: UpdateNet,
     private val installer: InstallerPort,
     private val installedVersion: String,
     private val cacheDir: File,
@@ -82,14 +82,31 @@ class UpdateManager(
 
     /** Called on every Home resume (also after the TV wakes): the reopen rule plus a due check. */
     fun onHomeResumed() {
-        // While Installing the confirm prompt may still be covering Home; wait for the real result.
-        if (leftFromUpdatePage && _state.value != UpdateState.Installing) {
+        // Home only resumes once the confirm prompt is gone (the prompt pauses it). Still Installing here means it was
+        // left with Home: Android sends no result for that, so give the button back; a late result still wins. The user
+        // chose Home, so no reopen.
+        if (_state.value == UpdateState.Installing) {
+            leftFromUpdatePage = false
+            deleteApk()
+            _state.value = UpdateState.Cancelled
+        }
+        if (leftFromUpdatePage) {
             leftFromUpdatePage = false
             if (_state.value == UpdateState.NeedsPermission && installer.canInstall()) {
                 _state.value = UpdateState.Idle
             }
             _reopen.tryEmit(Unit)
         }
+        scope.launch { checkIfDue() }
+    }
+
+    /**
+     * Debug builds only (DebugAlertReceiver `update-base`): read releases from [net] from now on and check right
+     * away, skipping the 6 h gate. Nothing in the main source set calls it, so release builds keep the GitHub URL.
+     */
+    fun debugCheckNow(net: UpdateNet) {
+        this.net = net
+        lastSuccessMs = null
         scope.launch { checkIfDue() }
     }
 

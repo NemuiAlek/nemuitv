@@ -9,13 +9,17 @@ import android.media.session.PlaybackState
 import android.os.SystemClock
 import com.nemuigames.nemuitv.core.core
 import com.nemuigames.nemuitv.nowplaying.debugMusicPkg
+import com.nemuigames.nemuitv.update.UpdateNet
+import okhttp3.OkHttpClient
 
 /**
  * Debug builds only: injects a fake alert so device tests don't need a laundry cycle or a real ring.
  *
  *   adb shell am broadcast -n com.nemuigames.nemuitv/.alerts.DebugAlertReceiver \
- *       -a com.nemuigames.nemuitv.DEBUG_ALERT --es kind washer|dryer|doorbell|music|nomusic
+ *       -a com.nemuigames.nemuitv.DEBUG_ALERT --es kind washer|dryer|doorbell|music|nomusic|update-base
  *
+ * `update-base --es url http://10.0.2.2:8765` points the update checker at a fake release server (the emulator's
+ * address for the computer) and checks right away; release builds always read GitHub.
  * `music` starts a fake playing session from NemuiTV itself (counted as a music app), so the banner + player can be
  * tested on the emulator; `nomusic` ends it.
  * Bypasses the no-replay tracker and the TV-off check; the rest is the real path (camera hold, timers, stack).
@@ -27,6 +31,9 @@ class DebugAlertReceiver : BroadcastReceiver() {
         when (val kind = intent.getStringExtra("kind") ?: "") {
             "music" -> startMusic(context.applicationContext)
             "nomusic" -> { session?.release(); session = null }
+            "update-base" -> intent.getStringExtra("url")?.let { url ->
+                context.core.update.debugCheckNow(UpdateNet(OkHttpClient(), url.trimEnd('/')))
+            }
             else -> context.core.alerts.debugFire(kind)
         }
     }

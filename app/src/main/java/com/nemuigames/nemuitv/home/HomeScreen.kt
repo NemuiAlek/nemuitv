@@ -386,7 +386,8 @@ fun HomeScreen(vm: HomeViewModel) {
     // service overlay handles it when it runs, otherwise this screen's own panel opens on the Update page.
     LaunchedEffect(Unit) {
         context.core.update.reopenRequests.collect {
-            if (context.core.takeoverRunning.value) return@collect
+            // Already open: its page state is live, and a startPage set now would linger until the next open.
+            if (context.core.takeoverRunning.value || overlay == Overlay.CONTROL_CENTER) return@collect
             startPage = CcPage.UPDATE; overlay = Overlay.CONTROL_CENTER
         }
     }

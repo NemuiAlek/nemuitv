@@ -142,6 +142,15 @@ class UpdateManagerTest {
         awaitUntil("second check") { checks == 2 }
     }
 
+    @Test fun debugCheckNowSkipsThe6hGateAndUsesTheNewSource() = runT {
+        primeAvailable()
+        assertEquals(1, checks)
+        val other = UpdateNet(OkHttpClient(), server.url("/other").toString().trimEnd('/'))
+        manager.debugCheckNow(other)
+        awaitUntil("check on the new source") { count("/other/repos/NemuiAlek/nemuitv/releases/latest") == 1 }
+        assertEquals(1, checks)
+    }
+
     @Test fun noPermissionGoesToNeedsPermission_thenAllowAndResumeReopensAsIdle() = runT {
         primeAvailable()
         var reopens = 0
@@ -224,13 +233,32 @@ class UpdateManagerTest {
         runCurrent()
         manager.onInstallPressed()
         awaitUntil("installing") { manager.state.value == UpdateState.Installing }
-        manager.onHomeResumed(); runCurrent() // prompt still covering Home: no early reopen
+        manager.onHomeResumed(); runCurrent() // left the prompt with Home: no reopen
         assertEquals(0, reopens)
         manager.onInstallStatus(PackageInstaller.STATUS_FAILURE_ABORTED, null)
         runCurrent()
         assertEquals(1, reopens)
         manager.onHomeResumed(); runCurrent()
         assertEquals(1, reopens)
+        coroutineContext.cancelChildren()
+    }
+
+    @Test fun homeFromThePromptGivesTheButtonBackWithoutReopening() = runT {
+        primeAvailable()
+        var reopens = 0
+        manager.reopenRequests.onEach { reopens++ }.launchIn(this)
+        runCurrent()
+        manager.onInstallPressed()
+        awaitUntil("installing") { manager.state.value == UpdateState.Installing }
+        // Home on the confirm prompt: Android sends no result, Home just resumes.
+        manager.onHomeResumed(); runCurrent()
+        assertEquals(UpdateState.Cancelled, manager.state.value)
+        assertEquals(0, reopens)
+        manager.onHomeResumed(); runCurrent()
+        assertEquals(0, reopens)
+        manager.onInstallPressed()
+        awaitUntil("installing again") { manager.state.value == UpdateState.Installing }
+        assertEquals(2, installer.log.count { it == "commit" })
         coroutineContext.cancelChildren()
     }
 
