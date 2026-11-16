@@ -58,6 +58,7 @@ class HomeTakeoverService : AccessibilityService() {
     private var dreamReceiverOn = false
     private var ringJob: kotlinx.coroutines.Job? = null
     private var setupJob: kotlinx.coroutines.Job? = null
+    private var updateJob: kotlinx.coroutines.Job? = null
 
     override fun onServiceConnected() {
         overlay = ControlCenterOverlay(this)
@@ -67,6 +68,8 @@ class HomeTakeoverService : AccessibilityService() {
         core.takeoverRunning.value = true
         setupJob?.cancel()
         setupJob = core.setupOverlayRequests.onEach { overlay.show(CcPage.SETUP) }.launchIn(core.scope)
+        updateJob?.cancel()
+        updateJob = core.update.reopenRequests.onEach { overlay.show(CcPage.UPDATE) }.launchIn(core.scope)
         if (alertOverlay == null) alertOverlay = AlertOverlay(this).also { it.attach() }
         if (!dreamReceiverOn) {
             ContextCompat.registerReceiver(this, dreamReceiver, IntentFilter(Intent.ACTION_DREAMING_STARTED),
@@ -141,6 +144,7 @@ class HomeTakeoverService : AccessibilityService() {
         main.removeCallbacksAndMessages(null)
         ringJob?.cancel(); ringJob = null
         setupJob?.cancel(); setupJob = null
+        updateJob?.cancel(); updateJob = null
         core.takeoverRunning.value = false
         if (dreamReceiverOn) { runCatching { unregisterReceiver(dreamReceiver) }; dreamReceiverOn = false }
         if (::overlay.isInitialized) overlay.hide()

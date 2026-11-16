@@ -375,12 +375,20 @@ fun HomeScreen(vm: HomeViewModel) {
     }
     // First run: until "Done" on the Setup page, show it on launch. With the Home-button service running it opens in the
     // over-apps Control Center (like a held Home); without, in this screen's own panel.
-    var setupFirst by remember { mutableStateOf(false) }
+    var startPage by remember { mutableStateOf<CcPage?>(null) }
     LaunchedEffect(Unit) {
         val store = SetupStore(context)
         if (store.checklistDone.first()) return@LaunchedEffect
         if (context.core.takeoverRunning.value) context.core.requestSetupOverlay()
-        else { setupFirst = true; overlay = Overlay.CONTROL_CENTER }
+        else { startPage = CcPage.SETUP; overlay = Overlay.CONTROL_CENTER }
+    }
+    // The updater asks to come back (permission, cancel or failure sent the user away or closed the panel): the
+    // service overlay handles it when it runs, otherwise this screen's own panel opens on the Update page.
+    LaunchedEffect(Unit) {
+        context.core.update.reopenRequests.collect {
+            if (context.core.takeoverRunning.value) return@collect
+            startPage = CcPage.UPDATE; overlay = Overlay.CONTROL_CENTER
+        }
     }
     // No-wallpaper hint (see WallpaperHint.kt). Recounted whenever Home comes back to the front (files are pushed from outside).
     val hintStore = remember { SetupStore(context) }
@@ -509,7 +517,7 @@ fun HomeScreen(vm: HomeViewModel) {
                 onOpenApp = { pkg -> closeOverlay(); context.launchPackage(pkg) },
                 // Opened from [⊜] (focused): it cross-fades into the column, the banner stays put.
                 overHomeTopRow = true, ccButtonFocused = true, focusOnClose = controlCenterFocus,
-                state = remember { ControlCenterState().also { if (setupFirst) { it.startAt(CcPage.SETUP); setupFirst = false } } },
+                state = remember { ControlCenterState().also { startPage?.let { page -> it.startAt(page); startPage = null } } },
             )
         }
 

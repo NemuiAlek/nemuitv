@@ -76,6 +76,7 @@ fun LauncherSettingsPage(
     val config by core.configStore.state.collectAsStateWithLifecycle()
     val haStatus by core.ha.status.collectAsStateWithLifecycle()
     val weatherProblem by core.ha.weatherProblem.collectAsStateWithLifecycle()
+    val update by core.update.available.collectAsStateWithLifecycle()
     val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?" }
     val takeoverOn = remember { takeoverEnabled(context) }
     fun focusIf(page: CcPage) = if (page == (cameFrom ?: CcPage.WALLPAPER_SETTINGS)) Modifier.focusRequester(focus) else Modifier
@@ -109,6 +110,8 @@ fun LauncherSettingsPage(
             )
             lines.forEach { Text(it, fontSize = 11.sp, color = Jt.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
         }
+        // Only when a newer release is known; the one place the app announces it.
+        update?.let { SettingRow("Update Available!", "${it.versionText} ›", focusIf(CcPage.UPDATE), yellow = true) { onOpen(CcPage.UPDATE) } }
     }
 }
 
@@ -177,15 +180,15 @@ internal fun PageTitle(title: String) =
         modifier = Modifier.padding(start = 4.dp, bottom = 2.dp))
 
 @Composable
-internal fun SettingRow(label: String, value: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun SettingRow(label: String, value: String, modifier: Modifier = Modifier, yellow: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     Surface(
-        onClick = onClick,
+        onClick = { if (enabled) onClick() }, // stays focusable while disabled so Back/focus never get stuck
         // Rows were "way too large" on the couch: 30 dp rows, was 40.
         modifier = modifier.fillMaxWidth().height(SettingRowHeight),
         shape = ClickableSurfaceDefaults.shape(shape = CcRowShape),
-        colors = Glass.colors(),
+        colors = if (yellow) Glass.yellowColors() else Glass.colors(),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
-        border = Glass.border(CcRowShape),
+        border = if (yellow) Glass.yellowBorder(CcRowShape) else Glass.border(CcRowShape),
         glow = Glass.glow(),
     ) {
         Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {

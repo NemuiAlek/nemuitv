@@ -114,7 +114,7 @@ class ControlCenterState {
         return true
     }
 
-    /** Opens straight on a Launcher settings sub-page (first-launch Setup): Back goes to Launcher settings, then main. */
+    /** Opens straight on a Launcher settings sub-page (first-launch Setup, or reopening Update): Back goes to Launcher settings, then main. */
     fun startAt(page: CcPage) {
         returnTo = CcTile.SETTINGS
         this.page = page
@@ -373,6 +373,7 @@ fun ControlCenter(
                     CcPage.WALLPAPER_SETTINGS -> WallpaperSettingsPage(core, firstRowFocus = pageFocus)
                     CcPage.SCREENSAVER_SETTINGS -> ScreensaverSettingsPage(core, firstRowFocus = pageFocus)
                     CcPage.SETUP -> SetupPage(core, firstRowFocus = pageFocus, onDone = { perform(CcAction.Back) })
+                    CcPage.UPDATE -> UpdatePage(core, firstRowFocus = pageFocus)
                     CcPage.MAIN, CcPage.WIFI_QR -> Unit
                 }
             }

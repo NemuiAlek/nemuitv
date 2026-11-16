@@ -26,13 +26,13 @@ fun ccMainFocus(returnTo: CcTile?, bannerShown: Boolean, inputsShown: Boolean = 
 
 /**
  * What the panel shows: the tile grid, or one of its sub-pages. WALLPAPER_SETTINGS and SCREENSAVER_SETTINGS are
- * buckets inside Launcher settings (the list had grown to 13 rows); SETUP is the setup checklist, also in there.
+ * buckets inside Launcher settings (the list had grown to 13 rows); SETUP is the setup checklist and UPDATE the update page, also in there.
  */
-enum class CcPage { MAIN, INPUTS, WIFI_QR, LAUNCHER_SETTINGS, WALLPAPER_SETTINGS, SCREENSAVER_SETTINGS, SETUP }
+enum class CcPage { MAIN, INPUTS, WIFI_QR, LAUNCHER_SETTINGS, WALLPAPER_SETTINGS, SCREENSAVER_SETTINGS, SETUP, UPDATE }
 
 /** Where Back goes from this page: a Launcher settings bucket → Launcher settings, any other sub-page → main. */
 val CcPage.parent: CcPage get() = when (this) {
-    CcPage.WALLPAPER_SETTINGS, CcPage.SCREENSAVER_SETTINGS, CcPage.SETUP -> CcPage.LAUNCHER_SETTINGS
+    CcPage.WALLPAPER_SETTINGS, CcPage.SCREENSAVER_SETTINGS, CcPage.SETUP, CcPage.UPDATE -> CcPage.LAUNCHER_SETTINGS
     else -> CcPage.MAIN
 }
 

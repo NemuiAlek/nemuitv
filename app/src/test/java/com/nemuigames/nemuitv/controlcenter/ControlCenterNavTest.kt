@@ -13,6 +13,8 @@ class ControlCenterNavTest {
         }
     }
 
+    @Test fun updateParentIsLauncherSettings() = assertEquals(CcPage.LAUNCHER_SETTINGS, CcPage.UPDATE.parent)
+
     @Test fun back_main_closes() {
         assertEquals(CcAction.None, ccKey(CcPage.MAIN, DockKey.BACK, down = true))
         assertEquals(CcAction.Close, ccKey(CcPage.MAIN, DockKey.BACK, down = false))

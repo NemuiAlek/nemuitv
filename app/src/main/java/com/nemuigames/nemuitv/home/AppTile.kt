@@ -63,6 +63,27 @@ object Glass {
     @Composable
     fun glow() = ClickableSurfaceDefaults.glow(focusedGlow = Glow(elevationColor = Color.Black.copy(alpha = 0.5f), elevation = 8.dp))
 
+    // Light-yellow variant for the "Update Available!" row. All the yellow values live here so they tune in one place.
+    private val YellowFrost = Color(0xFFFFE680).copy(alpha = 0.30f)
+    private val YellowFrostFocused = Color(0xFFFFF0A8).copy(alpha = 0.95f)
+    private val YellowBorder = Color(0xFFFFE680).copy(alpha = 0.55f)
+
+    @Composable
+    fun yellowColors() = ClickableSurfaceDefaults.colors(
+        containerColor = YellowFrost,
+        focusedContainerColor = YellowFrostFocused,
+        pressedContainerColor = YellowFrostFocused,
+        contentColor = Jt.TextPrimary,
+        focusedContentColor = Jt.TextOnFocus,
+        pressedContentColor = Jt.TextOnFocus,
+    )
+
+    @Composable
+    fun yellowBorder(shape: Shape) = ClickableSurfaceDefaults.border(
+        border = Border(BorderStroke(1.dp, YellowBorder), shape = shape),
+        focusedBorder = Border(BorderStroke(2.dp, Color.White), shape = shape),
+    )
+
     /** The resting glass (frosted fill + hairline border) for a surface that isn't focusable itself (Now Playing frame). */
     fun surface(shape: Shape): Modifier = Modifier.background(Jt.Frost, shape).border(1.dp, Jt.FrostBorder, shape)
 
